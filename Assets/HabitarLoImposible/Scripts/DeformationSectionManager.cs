@@ -1,183 +1,261 @@
-﻿using UnityEngine;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using UnityEditor;
+using UnityEngine;
 
 public class DeformationSectionManager : MonoBehaviour
 {
     [Header("Grid")]
-    [SerializeField] private GridGenerator gridGenerator;
-
-    [Header("Centro del hoyo")]
-    [SerializeField] private Vector2Int holeCenter = new Vector2Int();
+    [SerializeField] private GridSurfaceMesh gridSurfaceMesh;
 
     [Header("Tamaño de las secciones")]
-    [SerializeField] private float sectionWidth = 5f;
+    [SerializeField] private float sectionWidth = 1f;
 
-    [Header("Profundidad por sección")]
-    [SerializeField] private float depthPerSection = 0.1f;
 
-    [Header("Debug")]
-    [SerializeField] private Material[] debugMaterials;
-
-    [SerializeField] private Transform xrOrigin;
-
-    [Header("Velocidad de deformación")]
-    [SerializeField] private float deformationSpeed = 2f;
-
-    private int previousPlayerSection = -1;
-
-    private List<DeformationSection> sections = new List<DeformationSection>();
+    private List<DeformationSection> sections =
+        new List<DeformationSection>();
 
 
     public List<DeformationSection> Sections => sections;
 
+    [Header("Debug Deformation")]
+    [SerializeField] private int testSection = 5;
+    [SerializeField] private float testDeformation = -0.01f;
+
+    [Header("Player")]
+    [SerializeField] private Transform xrOrigin;
+
+    [Header("Deformación")]
+    [SerializeField] private float deformationPerSection = 0.01f;
+    private int previousPlayerSection = -1;
 
     private void Start()
     {
-        holeCenter = GetHoleCenter();
         CreateSections();
+
+        previousPlayerSection = GetPlayerSection();
     }
 
     private void Update()
     {
-        UpdateDeformation();
+        int currentPlayerSection =
+            GetPlayerSection();
+
+        if (currentPlayerSection ==
+            previousPlayerSection)
+            return;
+
+        UpdateDeformation(
+            previousPlayerSection,
+            currentPlayerSection
+        );
+
+        previousPlayerSection =
+            currentPlayerSection;
     }
 
-
-    private Vector2Int GetHoleCenter()
+    private void UpdateDeformation(
+    int previousSection,
+    int currentSection)
     {
-        int centerX = gridGenerator.Width / 2;
-        int centerZ = gridGenerator.Height / 2;
+        // -----------------------------------------
+        // El jugador se acerca al centro
+        // -----------------------------------------
 
-        return new Vector2Int(centerX, centerZ);
+        if (currentSection < previousSection)
+        {
+            for (int i = 0; i <= currentSection; i++)
+            {
+                sections[i].AddDeformation(
+                    -deformationPerSection
+                );
+            }
+        }
+
+
+        // -----------------------------------------
+        // El jugador se aleja del centro
+        // -----------------------------------------
+
+        else if (currentSection > previousSection)
+        {
+            for (int i = 0; i <= previousSection; i++)
+            {
+                sections[i].AddDeformation(
+                    deformationPerSection
+                );
+            }
+        }
+
+
+        ApplyAllSections();
+    }
+
+    private void ApplyAllSections()
+    {
+        foreach (DeformationSection section in sections)
+        {
+            gridSurfaceMesh.ApplySectionDeformation(
+                section
+            );
+        }
+    }
+
+    private int GetPlayerSection()
+    {
+        Vector2 playerPosition = new Vector2(
+            xrOrigin.position.x,
+            xrOrigin.position.z
+        );
+
+        float distance = playerPosition.magnitude;
+
+        int sectionIndex =
+            Mathf.FloorToInt(distance / sectionWidth);
+
+        sectionIndex = Mathf.Clamp(
+            sectionIndex,
+            0,
+            sections.Count - 1
+        );
+
+        return sectionIndex;
     }
 
     /// <summary>
-    /// Crea dinámicamente las secciones y asigna cada cubo
-    /// a la sección correspondiente según su distancia al centro.
+    /// Crea las secciones concéntricas alrededor
+    /// del centro de la malla.
     /// </summary>
     private void CreateSections()
     {
+        sections.Clear();
 
-        for (int x = 0; x < gridGenerator.Width; x++)
+        Vector3[] vertices =
+            gridSurfaceMesh.Vertices;
+
+
+        // ------------------------------------------------
+        // 1. Averiguamos cuál es el radio máximo de la malla
+        // ------------------------------------------------
+
+        float maxRadius = 0f;
+
+        foreach (Vector3 vertex in vertices)
         {
-            for (int z = 0; z < gridGenerator.Height; z++)
+            float distance = Vector2.Distance(
+                Vector2.zero,
+                new Vector2(vertex.x, vertex.z)
+            );
+
+            if (distance > maxRadius)
             {
-                //distancia del centro
-                float distance = Vector2.Distance(
-                    new Vector2(x, z),
-                    holeCenter
+                maxRadius = distance;
+            }
+        }
+
+
+        // ------------------------------------------------
+        // 2. Calculamos cuántas secciones necesitamos
+        // ------------------------------------------------
+
+        int sectionCount =
+            Mathf.CeilToInt(maxRadius / sectionWidth);
+
+
+        // ------------------------------------------------
+        // 3. Creamos las secciones
+        // ------------------------------------------------
+
+        for (int i = 0; i < sectionCount; i++)
+        {
+            float innerRadius =
+                i * sectionWidth;
+
+            float outerRadius =
+                (i + 1) * sectionWidth;
+
+
+            DeformationSection section =
+                new DeformationSection(
+                    i,
+                    innerRadius,
+                    outerRadius
                 );
 
 
-                int sectionIndex = Mathf.FloorToInt(
+            sections.Add(section);
+        }
+
+
+        // ------------------------------------------------
+        // 4. Asignamos cada vértice a una sección
+        // ------------------------------------------------
+
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector3 vertex = vertices[i];
+
+
+            float distance = Vector2.Distance(
+                Vector2.zero,
+                new Vector2(vertex.x, vertex.z)
+            );
+
+
+            int sectionIndex =
+                Mathf.FloorToInt(
                     distance / sectionWidth
                 );
 
-                // Si todavía no existe esta sección, la creamos.
-                while (sections.Count <= sectionIndex)
-                {
-                    CreateSection(sections.Count);
-                }
 
-                // Añadimos el cubo a su sección correspondiente.
-                GameObject cube = gridGenerator.Grid[x, z];
-
-                sections[sectionIndex].AddCube(cube);
-            }
-        }
-
-        //Visualización temporal de las secciones
-        for (int i = 0; i < sections.Count; i++)
-        {
-            if (i < debugMaterials.Length)
+            if (sectionIndex >= 0 &&
+                sectionIndex < sections.Count)
             {
-                sections[i].SetDebugMaterial(debugMaterials[i]);
+                sections[sectionIndex]
+                    .AddVertex(i);
             }
         }
     }
 
+    //private void OnDrawGizmos()
+    //{
+    //    if (gridSurfaceMesh == null)
+    //        return;
 
-    /// <summary>
-    /// Crea una nueva sección.
-    /// </summary>
-    private void CreateSection(int index)
-    {
-        GameObject sectionObject = new GameObject(
-            "DeformationSection_" + index
-        );
+    //    if (gridSurfaceMesh.Vertices == null)
+    //        return;
 
-        sectionObject.transform.SetParent(transform);
+    //    if (sections == null || sections.Count == 0)
+    //        return;
 
-        DeformationSection section =
-            sectionObject.AddComponent<DeformationSection>();
+    //    Vector3[] vertices = gridSurfaceMesh.Vertices;
 
-        float depth = index * depthPerSection;
+    //    for (int i = 0; i < sections.Count; i++)
+    //    {
+    //        DeformationSection section = sections[i];
 
-        section.Initialize(index, depth);
+    //        float hue = (float)i / sections.Count;
 
-        sections.Add(section);
-    }
+    //        Gizmos.color = Color.HSVToRGB(hue, 1f, 1f);
 
+    //        foreach (int vertexIndex in section.VertexIndices)
+    //        {
+    //            if (vertexIndex < 0 ||
+    //                vertexIndex >= vertices.Length)
+    //                continue;
 
-    private void UpdateDeformation()
-    {
-        Vector2Int playerCell =
-            gridGenerator.WorldToGrid(xrOrigin.position);
+    //            Vector3 vertexPosition =
+    //                gridSurfaceMesh.transform.TransformPoint(
+    //                    vertices[vertexIndex]
+    //                );
 
-        float distance = Vector2.Distance(
-            new Vector2(playerCell.x, playerCell.y),
-            holeCenter
-        );
-
-        int currentPlayerSection =
-            Mathf.FloorToInt(distance / sectionWidth);
-
-
-        // Primera detección
-        if (previousPlayerSection == -1)
-        {
-            previousPlayerSection = currentPlayerSection;
-            return;
-        }
-
-
-        // El jugador se ha movido de sección
-        if (currentPlayerSection != previousPlayerSection)
-        {
-            // Avanza hacia el centro
-            if (currentPlayerSection < previousPlayerSection)
-            {
-                for (int i = 0; i <= currentPlayerSection; i++)
-                {
-                    sections[i].AddDeformation(-depthPerSection);
-                }
-            }
-
-            // Se aleja del centro
-            else
-            {
-                for (int i = 0; i <= currentPlayerSection; i++)
-                {
-                    sections[i].AddDeformation(depthPerSection);
-                }
-            }
-
-            previousPlayerSection = currentPlayerSection;
-        }
-    }
-
-
-
-
-
-
-
-
-
-
-
+    //            Gizmos.DrawSphere(
+    //                vertexPosition,
+    //                0.05f
+    //            );
+    //        }
+    //    }
+    //}
 }
-
 
 
 
