@@ -28,6 +28,8 @@ public class DeformationSectionManager : MonoBehaviour
     [SerializeField] private float deformationPerSection = 0.01f;
     private int previousPlayerSection = -1;
 
+    private float currentDeformationRadius = 0f;
+
     private void Start()
     {
         CreateSections();
@@ -37,11 +39,9 @@ public class DeformationSectionManager : MonoBehaviour
 
     private void Update()
     {
-        int currentPlayerSection =
-            GetPlayerSection();
+        int currentPlayerSection = GetPlayerSection();
 
-        if (currentPlayerSection ==
-            previousPlayerSection)
+        if (currentPlayerSection == previousPlayerSection)
             return;
 
         UpdateDeformation(
@@ -49,20 +49,27 @@ public class DeformationSectionManager : MonoBehaviour
             currentPlayerSection
         );
 
-        previousPlayerSection =
-            currentPlayerSection;
+        previousPlayerSection = currentPlayerSection;
     }
 
+
     private void UpdateDeformation(
-    int previousSection,
-    int currentSection)
+        int previousSection,
+        int currentSection)
     {
+        int firstAffectedSection;
+        int lastAffectedSection;
+
+
         // -----------------------------------------
         // El jugador se acerca al centro
         // -----------------------------------------
 
         if (currentSection < previousSection)
         {
+            firstAffectedSection = 0;
+            lastAffectedSection = currentSection;
+
             for (int i = 0; i <= currentSection; i++)
             {
                 sections[i].AddDeformation(
@@ -76,8 +83,11 @@ public class DeformationSectionManager : MonoBehaviour
         // El jugador se aleja del centro
         // -----------------------------------------
 
-        else if (currentSection > previousSection)
+        else
         {
+            firstAffectedSection = 0;
+            lastAffectedSection = previousSection;
+
             for (int i = 0; i <= previousSection; i++)
             {
                 sections[i].AddDeformation(
@@ -87,19 +97,16 @@ public class DeformationSectionManager : MonoBehaviour
         }
 
 
-        ApplyAllSections();
-    }
+        // -----------------------------------------
+        // Actualizamos la malla UNA SOLA VEZ
+        // -----------------------------------------
 
-    private void ApplyAllSections()
-    {
-        foreach (DeformationSection section in sections)
-        {
-            gridSurfaceMesh.ApplySectionDeformation(
-                section
-            );
-        }
+        gridSurfaceMesh.ApplySectionDeformations(
+            sections,
+            firstAffectedSection,
+            lastAffectedSection
+        );
     }
-
     private int GetPlayerSection()
     {
         Vector2 playerPosition = new Vector2(

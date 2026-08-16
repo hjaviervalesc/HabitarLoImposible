@@ -1,7 +1,10 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 [RequireComponent(typeof(MeshFilter))]
 [RequireComponent(typeof(MeshRenderer))]
+[RequireComponent(typeof(MeshCollider))]
 public class GridSurfaceMesh : MonoBehaviour
 {
     [Header("Grid")]
@@ -43,7 +46,7 @@ public class GridSurfaceMesh : MonoBehaviour
     public float CellSize => cellSize;
 
 
-    private void Start()
+    private void Awake()
     {
         GenerateMesh();
 
@@ -151,6 +154,8 @@ public class GridSurfaceMesh : MonoBehaviour
             "GridSurfaceMesh";
 
 
+        mesh.indexFormat = IndexFormat.UInt32;
+
         mesh.vertices =
             vertices;
 
@@ -168,41 +173,307 @@ public class GridSurfaceMesh : MonoBehaviour
 
         meshFilter.mesh =
             mesh;
+
+        MeshCollider meshCollider =
+    GetComponent<MeshCollider>();
+
+        if (meshCollider != null)
+        {
+            meshCollider.sharedMesh = mesh;
+        }
     }
 
-
-    /// <summary>
-    /// Aplica la deformación correspondiente
-    /// a una sección.
-    /// </summary>
-    public void ApplySectionDeformation(
-        DeformationSection section)
+    public void ApplySectionDeformations(
+    List<DeformationSection> sections,
+    int firstAffectedSection,
+    int lastAffectedSection)
     {
-        foreach (int vertexIndex in section.VertexIndices)
+        if (sections == null || sections.Count == 0)
+            return;
+
+        firstAffectedSection =
+            Mathf.Max(0, firstAffectedSection);
+
+        lastAffectedSection =
+            Mathf.Min(
+                sections.Count - 1,
+                lastAffectedSection
+            );
+
+
+        // -----------------------------------------
+        // Actualizamos únicamente las secciones
+        // que han cambiado.
+        // -----------------------------------------
+
+        for (int s = firstAffectedSection;
+             s <= lastAffectedSection;
+             s++)
         {
-            Vector3 vertex =
-                originalVertices[vertexIndex];
+            DeformationSection currentSection =
+                sections[s];
+
+            int nextIndex =
+                Mathf.Min(
+                    s + 1,
+                    sections.Count - 1
+                );
+
+            DeformationSection nextSection =
+                sections[nextIndex];
 
 
-            vertex.y +=
-                section.CurrentOffset;
+            foreach (int vertexIndex
+                in currentSection.VertexIndices)
+            {
+                Vector3 originalVertex =
+                    originalVertices[vertexIndex];
 
 
-            vertices[vertexIndex] =
-                vertex;
+                float distance =
+                    new Vector2(
+                        originalVertex.x,
+                        originalVertex.z
+                    ).magnitude;
+
+
+                float t = 0f;
+
+
+                if (currentSection.OuterRadius >
+                    currentSection.InnerRadius)
+                {
+                    t = Mathf.InverseLerp(
+                        currentSection.InnerRadius,
+                        currentSection.OuterRadius,
+                        distance
+                    );
+                }
+
+
+                float deformation =
+                    Mathf.Lerp(
+                        currentSection.CurrentOffset,
+                        nextSection.CurrentOffset,
+                        t
+                    );
+
+
+                Vector3 vertex =
+                    originalVertex;
+
+                vertex.y += deformation;
+
+                vertices[vertexIndex] =
+                    vertex;
+            }
         }
 
 
-        // Actualizamos la malla una sola vez.
+        // -----------------------------------------
+        // Actualizamos la malla UNA SOLA VEZ
+        // -----------------------------------------
+
+        mesh.vertices = vertices;
+
+        RecalculateAffectedNormals(
+        sections,
+        firstAffectedSection,
+        lastAffectedSection
+    );
+
+
+        // -----------------------------------------
+        // Actualizamos el collider
+        // -----------------------------------------
+
+        MeshCollider meshCollider =
+            GetComponent<MeshCollider>();
+
+        if (meshCollider != null)
+        {
+            meshCollider.sharedMesh = null;
+            meshCollider.sharedMesh = mesh;
+        }
+    }
+
+    public void ApplyRadialDeformation(
+    float deformationRadius)
+    {
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector3 vertex =
+                originalVertices[i];
+
+            float distance =
+                new Vector2(
+                    vertex.x,
+                    vertex.z
+                ).magnitude;
+
+            if (distance <= deformationRadius)
+            {
+                float t =
+                    distance / deformationRadius;
+
+                float deformation =
+                    Mathf.Lerp(
+                        -0.1f,
+                        0f,
+                        t
+                    );
+
+                vertex.y += deformation;
+
+                vertices[i] =
+                    vertex;
+            }
+            else
+            {
+                vertex.y =
+                    originalVertices[i].y;
+            }
+        }
+
         mesh.vertices =
             vertices;
-
 
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
     }
 
+    private void RecalculateAffectedNormals(
+    List<DeformationSection> sections,
+    int firstAffectedSection,
+    int lastAffectedSection)
+    {
+        Vector3[] normals = mesh.normals;
 
+        int vertexWidth = width + 1;
+
+        HashSet<int> affectedVertices =
+            new HashSet<int>();
+
+        // Recogemos los vértices de las secciones afectadas
+        // y de las secciones vecinas.
+        for (int s = firstAffectedSection;
+             s <= lastAffectedSection;
+             s++)
+        {
+            foreach (int vertexIndex in sections[s].VertexIndices)
+            {
+                affectedVertices.Add(vertexIndex);
+
+                int x = vertexIndex % vertexWidth;
+                int z = vertexIndex / vertexWidth;
+
+                // Añadimos vecinos porque sus normales
+                // también pueden haber cambiado.
+                if (x > 0)
+                    affectedVertices.Add(vertexIndex - 1);
+
+                if (x < width)
+                    affectedVertices.Add(vertexIndex + 1);
+
+                if (z > 0)
+                    affectedVertices.Add(vertexIndex - vertexWidth);
+
+                if (z < height)
+                    affectedVertices.Add(vertexIndex + vertexWidth);
+            }
+        }
+
+        foreach (int vertexIndex in affectedVertices)
+        {
+            normals[vertexIndex] =
+                CalculateVertexNormal(vertexIndex);
+        }
+
+        mesh.normals = normals;
+    }
+
+    private Vector3 CalculateVertexNormal(int vertexIndex)
+    {
+        Vector3 normal = Vector3.zero;
+
+        int vertexWidth = width + 1;
+
+        int x = vertexIndex % vertexWidth;
+        int z = vertexIndex / vertexWidth;
+
+
+        // Triángulos que rodean al vértice.
+        for (int dz = -1; dz <= 0; dz++)
+        {
+            for (int dx = -1; dx <= 0; dx++)
+            {
+                int cellX = x + dx;
+                int cellZ = z + dz;
+
+                if (cellX < 0 || cellX >= width ||
+                    cellZ < 0 || cellZ >= height)
+                    continue;
+
+
+                int bottomLeft =
+                    cellZ * vertexWidth + cellX;
+
+                int bottomRight =
+                    bottomLeft + 1;
+
+                int topLeft =
+                    bottomLeft + vertexWidth;
+
+                int topRight =
+                    topLeft + 1;
+
+
+                // Triángulo 1
+                if (vertexIndex == bottomLeft ||
+                    vertexIndex == topLeft ||
+                    vertexIndex == topRight)
+                {
+                    normal += GetTriangleNormal(
+                        bottomLeft,
+                        topLeft,
+                        topRight
+                    );
+                }
+
+
+                // Triángulo 2
+                if (vertexIndex == bottomLeft ||
+                    vertexIndex == topRight ||
+                    vertexIndex == bottomRight)
+                {
+                    normal += GetTriangleNormal(
+                        bottomLeft,
+                        topRight,
+                        bottomRight
+                    );
+                }
+            }
+        }
+
+        return normal.normalized;
+    }
+
+    private Vector3 GetTriangleNormal(
+    int a,
+    int b,
+    int c)
+    {
+        Vector3 edge1 =
+            vertices[b] - vertices[a];
+
+        Vector3 edge2 =
+            vertices[c] - vertices[a];
+
+        return Vector3.Cross(
+            edge1,
+            edge2
+        ).normalized;
+    }
     private void CreateTestSlope()
     {
         for (int z = 0; z <= height; z++)
