@@ -282,19 +282,6 @@ public class GridSurfaceMesh : MonoBehaviour
         lastAffectedSection
     );
 
-
-        // -----------------------------------------
-        // Actualizamos el collider
-        // -----------------------------------------
-
-        MeshCollider meshCollider =
-            GetComponent<MeshCollider>();
-
-        if (meshCollider != null)
-        {
-            meshCollider.sharedMesh = null;
-            meshCollider.sharedMesh = mesh;
-        }
     }
 
     public void ApplyRadialDeformation(
