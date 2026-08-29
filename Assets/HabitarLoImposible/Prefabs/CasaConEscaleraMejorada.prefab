@@ -2096,7 +2096,7 @@ GameObject:
   m_Component:
   - component: {fileID: 5318406118053030246}
   m_Layer: 0
-  m_Name: CasaSinEscaleraMejorada
+  m_Name: CasaConEscaleraMejorada
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
