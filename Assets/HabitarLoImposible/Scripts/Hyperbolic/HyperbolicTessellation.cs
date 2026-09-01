@@ -4,29 +4,35 @@ using UnityEngine;
 public class HyperbolicTessellation : MonoBehaviour
 {
     [Header("Teselación regular {p,q}")]
-    [Min(3)]
-    public int p = 7;
-
-    [Min(3)]
-    public int q = 3;
+    [Min(3)] public int p = 7;
+    [Min(3)] public int q = 3;
 
     [Header("Representación")]
     public float diskScale = 50f;
-
-    [Header("Plantilla de geodésica")]
     public HyperbolicGeodesic geodesicPrefab;
-
-    [Header("Orientación")]
     public float rotationDegrees = 0f;
 
     [Header("Generación")]
     public bool generateOnStart = true;
 
-    [Tooltip("Genera los 7 polígonos vecinos del central")]
-    public bool generateFirstCrown = true;
+    [Range(0, 4)]
+    public int numberOfCrowns = 2;
 
-    // Evita dibujar dos veces un mismo lado.
+    [Header("Protección de la frontera")]
+    [Range(0.0001f, 0.01f)]
+    public float boundaryMargin = 0.001f;
+
+
+    // Evita repetir lados.
     private readonly HashSet<string> generatedEdges =
+        new HashSet<string>();
+
+    // Guarda los polígonos generados.
+    private readonly List<Vector2[]> generatedPolygons =
+        new List<Vector2[]>();
+
+    // Evita repetir polígonos.
+    private readonly HashSet<string> generatedPolygonKeys =
         new HashSet<string>();
 
 
@@ -40,7 +46,7 @@ public class HyperbolicTessellation : MonoBehaviour
 
 
     // ======================================================
-    // GENERAR TESELACIÓN
+    // GENERACIÓN PRINCIPAL
     // ======================================================
 
     [ContextMenu("Generar teselación")]
@@ -65,108 +71,188 @@ public class HyperbolicTessellation : MonoBehaviour
             return;
         }
 
-        ClearGeneratedGeodesics();
-        generatedEdges.Clear();
-
-        // --------------------------------------------------
-        // 1. Construir el polígono central
-        // --------------------------------------------------
+        ClearGeneration();
 
         Vector2[] centralPolygon =
             CalculateCentralPolygon();
 
-        DrawPolygon(
+        AddPolygon(
             centralPolygon,
             "Central"
         );
 
-        int polygonCount = 1;
-
-        // --------------------------------------------------
-        // 2. Generar la primera corona
-        // --------------------------------------------------
-
-        if (generateFirstCrown)
-        {
-            for (int side = 0; side < p; side++)
-            {
-                Vector2 pointA =
-                    centralPolygon[side];
-
-                Vector2 pointB =
-                    centralPolygon[(side + 1) % p];
-
-                Vector2[] reflectedPolygon =
-                    ReflectPolygonAcrossGeodesic(
-                        centralPolygon,
-                        pointA,
-                        pointB
-                    );
-
-                DrawPolygon(
-                    reflectedPolygon,
-                    $"Crown01_Polygon_{side + 1:00}"
-                );
-
-                polygonCount++;
-            }
-        }
+        GenerateCrowns(
+            centralPolygon
+        );
 
         Debug.Log(
             $"Teselación {{{p},{q}}} generada.\n" +
-            $"Polígonos: {polygonCount}\n" +
+            $"Coronas: {numberOfCrowns}\n" +
+            $"Polígonos almacenados: {generatedPolygons.Count}\n" +
             $"Geodésicas diferentes: {generatedEdges.Count}"
         );
     }
 
 
     // ======================================================
-    // CALCULAR POLÍGONO CENTRAL
+    // GENERAR CORONAS
+    // ======================================================
+
+    private void GenerateCrowns(
+        Vector2[] centralPolygon
+    )
+    {
+        List<Vector2[]> currentCrown =
+            new List<Vector2[]>
+            {
+                centralPolygon
+            };
+
+        for (int crown = 1;
+             crown <= numberOfCrowns;
+             crown++)
+        {
+            List<Vector2[]> nextCrown =
+                new List<Vector2[]>();
+
+            foreach (Vector2[] polygon in currentCrown)
+            {
+                for (int side = 0;
+                     side < polygon.Length;
+                     side++)
+                {
+                    Vector2 pointA =
+                        polygon[side];
+
+                    Vector2 pointB =
+                        polygon[
+                            (side + 1) %
+                            polygon.Length
+                        ];
+
+                    Vector2[] reflectedPolygon =
+                        ReflectPolygon(
+                            polygon,
+                            pointA,
+                            pointB
+                        );
+
+                    bool wasAdded =
+                        AddPolygon(
+                            reflectedPolygon,
+                            $"Crown{crown:00}_" +
+                            $"Polygon_{nextCrown.Count + 1:00}"
+                        );
+
+                    if (wasAdded)
+                    {
+                        nextCrown.Add(
+                            reflectedPolygon
+                        );
+                    }
+                }
+            }
+
+            Debug.Log(
+                $"Corona {crown}: " +
+                $"{nextCrown.Count} polígonos nuevos."
+            );
+
+            currentCrown = nextCrown;
+
+            if (currentCrown.Count == 0)
+            {
+                break;
+            }
+        }
+    }
+
+
+    // ======================================================
+    // AÑADIR POLÍGONO
+    // ======================================================
+
+    private bool AddPolygon(
+        Vector2[] polygon,
+        string polygonName
+    )
+    {
+        // Rechazar polígonos demasiado próximos
+        // o exteriores a la frontera.
+
+        if (!IsPolygonInsideDisk(polygon))
+        {
+            return false;
+        }
+
+        string polygonKey =
+            CreatePolygonKey(polygon);
+
+        // HashSet.Add devuelve false
+        // si el polígono ya existía.
+
+        if (!generatedPolygonKeys.Add(polygonKey))
+        {
+            return false;
+        }
+
+        generatedPolygons.Add(polygon);
+        DrawPolygon(polygon, polygonName);
+
+        return true;
+    }
+
+
+    // ======================================================
+    // POLÍGONO CENTRAL
     // ======================================================
 
     private Vector2[] CalculateCentralPolygon()
     {
-        // Carrión, págs. 35-36.
+        // Carrión Rebellato, págs. 35-36.
+
         float s =
             Mathf.Sin(Mathf.PI / p);
 
         float c =
             Mathf.Cos(Mathf.PI / q);
 
-        float ratioSC =
-            s / c;
-
         float d =
             1f /
             Mathf.Sqrt(
-                1f - ratioSC * ratioSC
+                1f -
+                Mathf.Pow(
+                    s / c,
+                    2f
+                )
             );
 
-        float cosHalfSector =
+        float cosAngle =
             Mathf.Cos(Mathf.PI / p);
 
-        // Radio euclídeo de los vértices
-        // dentro del disco de Poincaré.
         float vertexRadius =
-            d * cosHalfSector -
+            d * cosAngle -
             Mathf.Sqrt(
                 d * d *
-                cosHalfSector * cosHalfSector -
+                cosAngle *
+                cosAngle -
                 1f
             );
 
         Vector2[] vertices =
             new Vector2[p];
 
-        float rotationRadians =
+        float rotation =
             rotationDegrees *
             Mathf.Deg2Rad;
 
         for (int i = 0; i < p; i++)
         {
             float angle =
-                rotationRadians +
-                2f * Mathf.PI * i / p;
+                rotation +
+                2f *
+                Mathf.PI *
+                i / p;
 
             vertices[i] =
                 new Vector2(
@@ -176,92 +262,97 @@ public class HyperbolicTessellation : MonoBehaviour
                 vertexRadius;
         }
 
-        Debug.Log(
-            $"Radio normalizado de los vértices: " +
-            $"{vertexRadius:F6}"
-        );
-
         return vertices;
     }
 
 
     // ======================================================
-    // REFLEJAR POLÍGONO RESPECTO DE UNA GEODÉSICA
+    // REFLEXIÓN HIPERBÓLICA
     // ======================================================
 
-    private Vector2[] ReflectPolygonAcrossGeodesic(
+    private Vector2[] ReflectPolygon(
         Vector2[] polygon,
         Vector2 pointA,
         Vector2 pointB
     )
     {
-        Vector2[] reflectedPolygon =
+        Vector2[] reflected =
             new Vector2[polygon.Length];
 
-        float determinant =
-            pointA.x * pointB.y -
-            pointA.y * pointB.x;
+        // Geodésica con forma de diámetro.
 
-        // --------------------------------------------------
-        // CASO 1: la geodésica es un diámetro
-        // --------------------------------------------------
-
-        if (Mathf.Abs(determinant) < 0.0001f)
+        if (HyperbolicGeodesic.IsDiameter(
+                pointA,
+                pointB
+            ))
         {
-            Vector2 lineDirection =
+            Vector2 direction =
                 (pointB - pointA).normalized;
 
             for (int i = 0;
                  i < polygon.Length;
                  i++)
             {
-                reflectedPolygon[i] =
-                    ReflectPointAcrossDiameter(
+                reflected[i] =
+                    ReflectAcrossDiameter(
                         polygon[i],
-                        lineDirection
+                        direction
                     );
             }
 
-            return reflectedPolygon;
+            return reflected;
         }
 
-        // --------------------------------------------------
-        // CASO 2: la geodésica es una circunferencia
-        // --------------------------------------------------
+        // Geodésica con forma de arco.
 
-        CalculateGeodesicCircle(
-            pointA,
-            pointB,
-            out Vector2 center,
-            out float radius
-        );
+        bool circleFound =
+            HyperbolicGeodesic.TryGetSupportingCircle(
+                pointA,
+                pointB,
+                out Vector2 center,
+                out float radius
+            );
+
+        if (!circleFound)
+        {
+            Debug.LogError(
+                "No se ha podido calcular " +
+                "la circunferencia de la geodésica."
+            );
+
+            return polygon;
+        }
 
         for (int i = 0;
              i < polygon.Length;
              i++)
         {
-            reflectedPolygon[i] =
-                ReflectPointAcrossCircle(
+            reflected[i] =
+                ReflectAcrossCircle(
                     polygon[i],
                     center,
                     radius
                 );
         }
 
-        return reflectedPolygon;
+        return reflected;
     }
 
 
     // ======================================================
-    // REFLEXIÓN RESPECTO DE UNA CIRCUNFERENCIA
+    // INVERSIÓN CIRCULAR
     // ======================================================
 
-    private Vector2 ReflectPointAcrossCircle(
+    private Vector2 ReflectAcrossCircle(
         Vector2 point,
         Vector2 center,
         float radius
     )
     {
+        // Hitchman, secciones 3.2 y 5.1:
+        //
+        // P' = C + R²(P-C) / ||P-C||²
+
         Vector2 direction =
             point - center;
 
@@ -278,8 +369,6 @@ public class HyperbolicTessellation : MonoBehaviour
             return point;
         }
 
-        // P' = C + R²(P-C) / ||P-C||²
-
         return center +
                direction *
                (
@@ -293,63 +382,47 @@ public class HyperbolicTessellation : MonoBehaviour
     // REFLEXIÓN RESPECTO DE UN DIÁMETRO
     // ======================================================
 
-    private Vector2 ReflectPointAcrossDiameter(
+    private Vector2 ReflectAcrossDiameter(
         Vector2 point,
-        Vector2 lineDirection
+        Vector2 direction
     )
     {
         Vector2 projection =
             Vector2.Dot(
                 point,
-                lineDirection
+                direction
             ) *
-            lineDirection;
+            direction;
 
         return 2f * projection - point;
     }
 
 
     // ======================================================
-    // CIRCUNFERENCIA DE LA GEODÉSICA
+    // COMPROBAR FRONTERA DEL DISCO
     // ======================================================
 
-    private void CalculateGeodesicCircle(
-        Vector2 pointA,
-        Vector2 pointB,
-        out Vector2 center,
-        out float radius
+    private bool IsPolygonInsideDisk(
+        Vector2[] polygon
     )
     {
-        float denominator =
-            2f *
-            (
-                pointA.x * pointB.y -
-                pointA.y * pointB.x
-            );
+        float maximumRadius =
+            1f - boundaryMargin;
 
-        float a =
-            (pointA.sqrMagnitude + 1f) *
-            pointB.y -
-            (pointB.sqrMagnitude + 1f) *
-            pointA.y;
+        float maximumSquaredRadius =
+            maximumRadius *
+            maximumRadius;
 
-        float b =
-            (pointB.sqrMagnitude + 1f) *
-            pointA.x -
-            (pointA.sqrMagnitude + 1f) *
-            pointB.x;
+        foreach (Vector2 vertex in polygon)
+        {
+            if (vertex.sqrMagnitude >=
+                maximumSquaredRadius)
+            {
+                return false;
+            }
+        }
 
-        center =
-            new Vector2(
-                a / denominator,
-                b / denominator
-            );
-
-        radius =
-            Vector2.Distance(
-                center,
-                pointA
-            );
+        return true;
     }
 
 
@@ -370,7 +443,10 @@ public class HyperbolicTessellation : MonoBehaviour
                 vertices[i];
 
             Vector2 pointB =
-                vertices[(i + 1) % vertices.Length];
+                vertices[
+                    (i + 1) %
+                    vertices.Length
+                ];
 
             string edgeKey =
                 CreateEdgeKey(
@@ -378,8 +454,6 @@ public class HyperbolicTessellation : MonoBehaviour
                     pointB
                 );
 
-            // Si el lado ya pertenece a otro polígono,
-            // no lo dibujamos otra vez.
             if (!generatedEdges.Add(edgeKey))
             {
                 continue;
@@ -395,7 +469,7 @@ public class HyperbolicTessellation : MonoBehaviour
 
 
     // ======================================================
-    // CREAR UNA GEODÉSICA
+    // CREAR GEODÉSICA
     // ======================================================
 
     private void CreateGeodesic(
@@ -404,16 +478,6 @@ public class HyperbolicTessellation : MonoBehaviour
         string geodesicName
     )
     {
-        Vector2 hyperboloidA =
-            PoincareToHyperboloid(
-                poincareA
-            );
-
-        Vector2 hyperboloidB =
-            PoincareToHyperboloid(
-                poincareB
-            );
-
         HyperbolicGeodesic geodesic =
             Instantiate(
                 geodesicPrefab,
@@ -424,10 +488,14 @@ public class HyperbolicTessellation : MonoBehaviour
             geodesicName;
 
         geodesic.pointA =
-            hyperboloidA;
+            HyperbolicPoint.PoincareToHyperboloid(
+                poincareA
+            );
 
         geodesic.pointB =
-            hyperboloidB;
+            HyperbolicPoint.PoincareToHyperboloid(
+                poincareB
+            );
 
         geodesic.diskScale =
             diskScale;
@@ -437,7 +505,49 @@ public class HyperbolicTessellation : MonoBehaviour
 
 
     // ======================================================
-    // ELIMINAR LADOS DUPLICADOS
+    // CLAVE ÚNICA DE UN POLÍGONO
+    // ======================================================
+
+    private string CreatePolygonKey(
+        Vector2[] polygon
+    )
+    {
+        const float precision =
+            100000f;
+
+        List<string> vertexKeys =
+            new List<string>();
+
+        foreach (Vector2 vertex in polygon)
+        {
+            int x =
+                Mathf.RoundToInt(
+                    vertex.x *
+                    precision
+                );
+
+            int y =
+                Mathf.RoundToInt(
+                    vertex.y *
+                    precision
+                );
+
+            vertexKeys.Add(
+                $"{x},{y}"
+            );
+        }
+
+        vertexKeys.Sort();
+
+        return string.Join(
+            "|",
+            vertexKeys
+        );
+    }
+
+
+    // ======================================================
+    // CLAVE ÚNICA DE UN LADO
     // ======================================================
 
     private string CreateEdgeKey(
@@ -448,84 +558,25 @@ public class HyperbolicTessellation : MonoBehaviour
         const float precision =
             100000f;
 
-        int ax =
-            Mathf.RoundToInt(
-                pointA.x * precision
-            );
-
-        int ay =
-            Mathf.RoundToInt(
-                pointA.y * precision
-            );
-
-        int bx =
-            Mathf.RoundToInt(
-                pointB.x * precision
-            );
-
-        int by =
-            Mathf.RoundToInt(
-                pointB.y * precision
-            );
-
         string first =
-            $"{ax},{ay}";
+            $"{Mathf.RoundToInt(pointA.x * precision)}," +
+            $"{Mathf.RoundToInt(pointA.y * precision)}";
 
         string second =
-            $"{bx},{by}";
+            $"{Mathf.RoundToInt(pointB.x * precision)}," +
+            $"{Mathf.RoundToInt(pointB.y * precision)}";
 
-        // La clave debe ser la misma tanto para A-B
-        // como para B-A.
-
-        if (string.CompareOrdinal(
-                first,
-                second
-            ) < 0)
-        {
-            return first + "|" + second;
-        }
-
-        return second + "|" + first;
+        return string.CompareOrdinal(
+            first,
+            second
+        ) < 0
+            ? first + "|" + second
+            : second + "|" + first;
     }
 
 
     // ======================================================
-    // DISCO DE POINCARÉ → HIPERBOLOIDE
-    // ======================================================
-
-    private Vector2 PoincareToHyperboloid(
-        Vector2 poincarePoint
-    )
-    {
-        float squaredRadius =
-            poincarePoint.sqrMagnitude;
-
-        float denominator =
-            1f - squaredRadius;
-
-        if (denominator <= 0.000001f)
-        {
-            Debug.LogError(
-                "El punto está fuera del disco."
-            );
-
-            denominator = 0.000001f;
-        }
-
-        float x =
-            2f * poincarePoint.x /
-            denominator;
-
-        float y =
-            2f * poincarePoint.y /
-            denominator;
-
-        return new Vector2(x, y);
-    }
-
-
-    // ======================================================
-    // COMPROBAR CONDICIÓN HIPERBÓLICA
+    // CONDICIÓN HIPERBÓLICA
     // ======================================================
 
     private bool IsHyperbolicTessellation()
@@ -538,27 +589,31 @@ public class HyperbolicTessellation : MonoBehaviour
 
 
     // ======================================================
-    // LIMPIAR GENERACIÓN ANTERIOR
+    // LIMPIAR GENERACIÓN
     // ======================================================
 
-    private void ClearGeneratedGeodesics()
+    private void ClearGeneration()
     {
+        generatedEdges.Clear();
+        generatedPolygons.Clear();
+        generatedPolygonKeys.Clear();
+
         for (int i = transform.childCount - 1;
              i >= 0;
              i--)
         {
-            Transform child =
-                transform.GetChild(i);
+            GameObject child =
+                transform
+                    .GetChild(i)
+                    .gameObject;
 
             if (Application.isPlaying)
             {
-                Destroy(child.gameObject);
+                Destroy(child);
             }
             else
             {
-                DestroyImmediate(
-                    child.gameObject
-                );
+                DestroyImmediate(child);
             }
         }
     }

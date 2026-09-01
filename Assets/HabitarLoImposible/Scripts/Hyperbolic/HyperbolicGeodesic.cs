@@ -3,7 +3,7 @@
 [RequireComponent(typeof(LineRenderer))]
 public class HyperbolicGeodesic : MonoBehaviour
 {
-    [Header("Puntos en coordenadas hiperbólicas")]
+    [Header("Puntos en coordenadas del hiperboloide")]
     public Vector2 pointA = new Vector2(-1f, 1f);
     public Vector2 pointB = new Vector2(1f, 1f);
 
@@ -14,221 +14,149 @@ public class HyperbolicGeodesic : MonoBehaviour
     [Range(10, 200)]
     public int segments = 80;
 
-    // Line Renderer
     private LineRenderer line;
 
-    // Información geométrica de la geodésica
     private bool isDiameter;
 
-    // Información del arco
     private Vector2 arcCenter;
     private float arcRadius;
     private float arcAngleStart;
     private float arcAngleDelta;
 
-
     private void Awake()
     {
         line = GetComponent<LineRenderer>();
-
         DrawGeodesic();
     }
+
     public void DrawGeodesic()
     {
-        // --------------------------------------------------
-        // 1. Crear los puntos en el hiperboloide
-        // --------------------------------------------------
+        if (line == null)
+        {
+            line = GetComponent<LineRenderer>();
+        }
 
-        HyperbolicPoint A =
-            new HyperbolicPoint(
-                pointA.x,
-                pointA.y
-            );
+        Vector2 poincareA = GetPoincarePoint(pointA);
+        Vector2 poincareB = GetPoincarePoint(pointB);
 
-        HyperbolicPoint B =
-            new HyperbolicPoint(
-                pointB.x,
-                pointB.y
-            );
-
-
-        // --------------------------------------------------
-        // 2. Proyectarlos al disco de Poincaré
-        // --------------------------------------------------
-
-        Vector2 pA =
-            A.ToPoincareDisk();
-
-        Vector2 pB =
-            B.ToPoincareDisk();
-
-
-        // --------------------------------------------------
-        // 3. Determinar si la geodésica es un diámetro
-        // --------------------------------------------------
-
-        float determinant =
-            pA.x * pB.y -
-            pA.y * pB.x;
-
-        isDiameter =
-            Mathf.Abs(determinant) < 0.0001f;
-
-
-        // --------------------------------------------------
-        // 4. Dibujar la geodésica
-        // --------------------------------------------------
+        isDiameter = IsDiameter(poincareA, poincareB);
 
         if (isDiameter)
         {
-            DrawDiameter(pA, pB);
+            DrawDiameter(poincareA, poincareB);
         }
         else
         {
-            DrawArc(pA, pB);
+            DrawArc(poincareA, poincareB);
         }
     }
 
-
     // ======================================================
-    // DIÁMETRO
+    // CÁLCULO GEOMÉTRICO
     // ======================================================
 
-    private void DrawDiameter(Vector2 pA, Vector2 pB)
+    public static bool IsDiameter(Vector2 pointA, Vector2 pointB)
     {
-        line.positionCount = 2;
+        float determinant =
+            pointA.x * pointB.y -
+            pointA.y * pointB.x;
 
-        line.SetPosition(
-            0,
-            ToUnityPosition(pA)
-        );
-
-        line.SetPosition(
-            1,
-            ToUnityPosition(pB)
-        );
+        return Mathf.Abs(determinant) < 0.0001f;
     }
 
-
-    // ======================================================
-    // ARCO DE CIRCUNFERENCIA
-    // ======================================================
-
-    private void DrawArc(Vector2 pA, Vector2 pB)
+    public static bool TryGetSupportingCircle(
+        Vector2 pointA,
+        Vector2 pointB,
+        out Vector2 center,
+        out float radius
+    )
     {
-        // --------------------------------------------------
-        // 1. Calcular el centro de la circunferencia
-        // --------------------------------------------------
+        float determinant =
+            pointA.x * pointB.y -
+            pointA.y * pointB.x;
 
-        float denominator =
-            2f *
-            (
-                pA.x * pB.y -
-                pA.y * pB.x
-            );
-
-
-        // Si por algún motivo los puntos están prácticamente
-        // alineados con el origen, utilizamos un diámetro.
+        float denominator = 2f * determinant;
 
         if (Mathf.Abs(denominator) < 0.000001f)
         {
-            isDiameter = true;
+            center = Vector2.zero;
+            radius = 0f;
 
-            DrawDiameter(pA, pB);
+            return false;
+        }
+
+        float a =
+            (pointA.sqrMagnitude + 1f) * pointB.y -
+            (pointB.sqrMagnitude + 1f) * pointA.y;
+
+        float b =
+            (pointB.sqrMagnitude + 1f) * pointA.x -
+            (pointA.sqrMagnitude + 1f) * pointB.x;
+
+        center = new Vector2(
+            a / denominator,
+            b / denominator
+        );
+
+        radius = Vector2.Distance(center, pointA);
+
+        return true;
+    }
+
+    // ======================================================
+    // DIBUJO
+    // ======================================================
+
+    private void DrawDiameter(Vector2 pointA, Vector2 pointB)
+    {
+        line.positionCount = 2;
+
+        line.SetPosition(0, ToUnityPosition(pointA));
+        line.SetPosition(1, ToUnityPosition(pointB));
+    }
+
+    private void DrawArc(Vector2 pointA, Vector2 pointB)
+    {
+        if (!TryGetSupportingCircle(
+                pointA,
+                pointB,
+                out Vector2 center,
+                out float radius
+            ))
+        {
+            isDiameter = true;
+            DrawDiameter(pointA, pointB);
 
             return;
         }
 
-
-        float a =
-            (pA.sqrMagnitude + 1f) * pB.y -
-            (pB.sqrMagnitude + 1f) * pA.y;
-
-
-        float b =
-            (pB.sqrMagnitude + 1f) * pA.x -
-            (pA.sqrMagnitude + 1f) * pB.x;
-
-
-        Vector2 center =
-            new Vector2(
-                a / denominator,
-                b / denominator
-            );
-
-
-        // --------------------------------------------------
-        // 2. Calcular el radio
-        // --------------------------------------------------
-
-        float radius =
-            Vector2.Distance(
-                center,
-                pA
-            );
-
-
-        // Guardamos la información para poder utilizarla
-        // posteriormente para calcular tangentes.
-
         arcCenter = center;
         arcRadius = radius;
 
+        float angleA = Mathf.Atan2(
+            pointA.y - center.y,
+            pointA.x - center.x
+        );
 
-        // --------------------------------------------------
-        // 3. Calcular los ángulos de A y B
-        // --------------------------------------------------
+        float angleB = Mathf.Atan2(
+            pointB.y - center.y,
+            pointB.x - center.x
+        );
 
-        float angleA =
-            Mathf.Atan2(
-                pA.y - center.y,
-                pA.x - center.x
-            );
-
-
-        float angleB =
-            Mathf.Atan2(
-                pB.y - center.y,
-                pB.x - center.x
-            );
-
-
-        // --------------------------------------------------
-        // 4. Calcular el arco menor entre A y B
-        // --------------------------------------------------
-
-        float deltaAngle =
-            Mathf.DeltaAngle(
-                angleA * Mathf.Rad2Deg,
-                angleB * Mathf.Rad2Deg
-            ) * Mathf.Deg2Rad;
-
-
-        // Guardamos los datos del arco.
+        float deltaAngle = Mathf.DeltaAngle(
+            angleA * Mathf.Rad2Deg,
+            angleB * Mathf.Rad2Deg
+        ) * Mathf.Deg2Rad;
 
         arcAngleStart = angleA;
         arcAngleDelta = deltaAngle;
 
-
-        // --------------------------------------------------
-        // 5. Dibujar el arco
-        // --------------------------------------------------
-
-        line.positionCount =
-            segments + 1;
-
+        line.positionCount = segments + 1;
 
         for (int i = 0; i <= segments; i++)
         {
-            float t =
-                i / (float)segments;
-
-
-            float angle =
-                angleA +
-                deltaAngle * t;
-
+            float t = i / (float)segments;
+            float angle = angleA + deltaAngle * t;
 
             Vector2 point =
                 center +
@@ -237,7 +165,6 @@ public class HyperbolicGeodesic : MonoBehaviour
                     Mathf.Sin(angle)
                 ) * radius;
 
-
             line.SetPosition(
                 i,
                 ToUnityPosition(point)
@@ -245,9 +172,8 @@ public class HyperbolicGeodesic : MonoBehaviour
         }
     }
 
-
     // ======================================================
-    // CONVERSIÓN POINCARÉ → UNITY
+    // CONVERSIONES Y CONSULTAS
     // ======================================================
 
     private Vector3 ToUnityPosition(Vector2 point)
@@ -259,14 +185,7 @@ public class HyperbolicGeodesic : MonoBehaviour
         );
     }
 
-
-    // ======================================================
-    // OBTENER PUNTO EN EL DISCO
-    // ======================================================
-
-    public Vector2 GetPoincarePoint(
-        Vector2 hyperbolicPoint
-    )
+    public Vector2 GetPoincarePoint(Vector2 hyperbolicPoint)
     {
         HyperbolicPoint point =
             new HyperbolicPoint(
@@ -277,16 +196,9 @@ public class HyperbolicGeodesic : MonoBehaviour
         return point.ToPoincareDisk();
     }
 
-
-    // ======================================================
-    // TANGENTE REAL DE LA GEODÉSICA
-    // ======================================================
-
     public Vector2 GetTangentAt(float t)
     {
-        // --------------------------------------------------
-        // CASO 1: DIÁMETRO
-        // --------------------------------------------------
+        t = Mathf.Clamp01(t);
 
         if (isDiameter)
         {
@@ -297,17 +209,9 @@ public class HyperbolicGeodesic : MonoBehaviour
             return direction.normalized;
         }
 
-
-        // --------------------------------------------------
-        // CASO 2: ARCO
-        // --------------------------------------------------
-
         float angle =
             arcAngleStart +
             arcAngleDelta * t;
-
-
-        // Vector desde el centro hasta el punto.
 
         Vector2 radiusDirection =
             new Vector2(
@@ -315,81 +219,51 @@ public class HyperbolicGeodesic : MonoBehaviour
                 Mathf.Sin(angle)
             );
 
-
-        // La tangente es perpendicular al radio.
-
         Vector2 tangent =
             new Vector2(
                 -radiusDirection.y,
                 radiusDirection.x
             );
 
-
-        // --------------------------------------------------
-        // Asegurar que apunta de A hacia B
-        // --------------------------------------------------
-
         Vector2 directionAB =
             GetPoincarePoint(pointB) -
             GetPoincarePoint(pointA);
 
-
-        if (Vector2.Dot(
-                tangent,
-                directionAB
-            ) < 0f)
+        if (Vector2.Dot(tangent, directionAB) < 0f)
         {
             tangent = -tangent;
         }
 
-
         return tangent.normalized;
     }
-
-
-    // ======================================================
-    // OBTENER POSICIÓN EN LA GEODÉSICA
-    // ======================================================
 
     public Vector2 GetPointAt(float t)
     {
         t = Mathf.Clamp01(t);
 
-
-        // --------------------------------------------------
-        // DIÁMETRO
-        // --------------------------------------------------
-
         if (isDiameter)
         {
-            Vector2 A =
+            Vector2 poincareA =
                 GetPoincarePoint(pointA);
 
-            Vector2 B =
+            Vector2 poincareB =
                 GetPoincarePoint(pointB);
 
             return Vector2.Lerp(
-                A,
-                B,
+                poincareA,
+                poincareB,
                 t
             );
         }
-
-
-        // --------------------------------------------------
-        // ARCO
-        // --------------------------------------------------
 
         float angle =
             arcAngleStart +
             arcAngleDelta * t;
 
-
         return arcCenter +
                new Vector2(
                    Mathf.Cos(angle),
                    Mathf.Sin(angle)
-               ) *
-               arcRadius;
+               ) * arcRadius;
     }
 }

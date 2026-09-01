@@ -1255,7 +1255,7 @@ MonoBehaviour:
   geodesicPrefab: {fileID: 3746228572401670667, guid: 3eeb2e2bd9f585d478642879f7ac7e50, type: 3}
   rotationDegrees: 0
   generateOnStart: 1
-  generateFirstCrown: 1
+  numberOfCrowns: 4
 --- !u!4 &628884628 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 3761448991867709626, guid: 7d69fc55a9890e34bb3f7614b3d02cc8, type: 3}
