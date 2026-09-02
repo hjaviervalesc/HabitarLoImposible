@@ -1,34 +1,53 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
 [RequireComponent(typeof(MeshFilter))]
 [RequireComponent(typeof(MeshRenderer))]
 public class HyperbolicRoad : MonoBehaviour
 {
-    [Header("Geodésica")]
+    [Header("GeodÃ©sica")]
     public HyperbolicGeodesic geodesic;
 
     [Header("Carretera")]
-    [Min(0.1f)]
-    public float roadWidth = 1f;
+    [Min(0.01f)]
+    public float roadWidth = 1.25f;
 
     [Min(0.01f)]
     public float roadHeight = 0.05f;
 
-    [Header("Resolución")]
-    [Range(2, 200)]
-    public int segments = 80;
+    [Header("ResoluciÃ³n")]
+    [Range(2, 100)]
+    public int segments = 20;
 
     private MeshFilter meshFilter;
+    private bool hasGenerated;
 
 
     private void Awake()
     {
-        meshFilter = GetComponent<MeshFilter>();
+        meshFilter =
+            GetComponent<MeshFilter>();
     }
 
 
     private void Start()
     {
+        // Permite que las carreteras antiguas
+        // sigan funcionando.
+
+        if (!hasGenerated && geodesic != null)
+        {
+            GenerateRoad();
+        }
+    }
+
+
+    public void Initialize(
+        HyperbolicGeodesic targetGeodesic
+    )
+    {
+        geodesic =
+            targetGeodesic;
+
         GenerateRoad();
     }
 
@@ -38,15 +57,27 @@ public class HyperbolicRoad : MonoBehaviour
         if (geodesic == null)
         {
             Debug.LogError(
-                "HyperbolicRoad: No se ha asignado una HyperbolicGeodesic."
+                "HyperbolicRoad: falta asignar " +
+                "una HyperbolicGeodesic."
             );
 
             return;
         }
 
-        Mesh mesh = new Mesh();
 
-        mesh.name = "HyperbolicRoadMesh";
+        if (meshFilter == null)
+        {
+            meshFilter =
+                GetComponent<MeshFilter>();
+        }
+
+
+        Mesh mesh =
+            new Mesh();
+
+        mesh.name =
+            "HyperbolicRoadMesh";
+
 
         Vector3[] vertices =
             new Vector3[(segments + 1) * 2];
@@ -58,8 +89,12 @@ public class HyperbolicRoad : MonoBehaviour
             new int[segments * 6];
 
 
+        float halfWidth =
+            roadWidth * 0.5f;
+
+
         // ==================================================
-        // CREAR LOS VÉRTICES
+        // CREAR VÃ‰RTICES
         // ==================================================
 
         for (int i = 0; i <= segments; i++)
@@ -68,25 +103,12 @@ public class HyperbolicRoad : MonoBehaviour
                 i / (float)segments;
 
 
-            // ----------------------------------------------
-            // Posición sobre la geodésica
-            // ----------------------------------------------
-
             Vector2 point =
                 geodesic.GetPointAt(t);
-
-
-            // ----------------------------------------------
-            // Tangente de la geodésica
-            // ----------------------------------------------
 
             Vector2 tangent =
                 geodesic.GetTangentAt(t);
 
-
-            // ----------------------------------------------
-            // Vector perpendicular
-            // ----------------------------------------------
 
             Vector2 normal =
                 new Vector2(
@@ -95,43 +117,28 @@ public class HyperbolicRoad : MonoBehaviour
                 ).normalized;
 
 
-            // ----------------------------------------------
-            // Mitad del ancho
-            // ----------------------------------------------
-
-            float halfWidth =
-                roadWidth * 0.5f;
+            Vector3 center =
+                ToUnityPosition(point);
 
 
-            // ----------------------------------------------
-            // Lado izquierdo y derecho
-            // ----------------------------------------------
+            Vector3 widthDirection =
+                new Vector3(
+                    normal.x,
+                    0f,
+                    normal.y
+                ) *
+                halfWidth;
 
-            Vector2 left =
-                point +
-                normal * halfWidth;
-
-
-            Vector2 right =
-                point -
-                normal * halfWidth;
-
-
-            // ----------------------------------------------
-            // Convertir a Unity
-            // ----------------------------------------------
 
             vertices[i * 2] =
-                ToUnityPosition(left);
+                center +
+                widthDirection;
 
 
             vertices[i * 2 + 1] =
-                ToUnityPosition(right);
+                center -
+                widthDirection;
 
-
-            // ----------------------------------------------
-            // UV
-            // ----------------------------------------------
 
             uv[i * 2] =
                 new Vector2(
@@ -149,7 +156,7 @@ public class HyperbolicRoad : MonoBehaviour
 
 
         // ==================================================
-        // CREAR TRIÁNGULOS
+        // CREAR TRIÃNGULOS
         // ==================================================
 
         int triangleIndex = 0;
@@ -164,8 +171,6 @@ public class HyperbolicRoad : MonoBehaviour
                 (i + 1) * 2;
 
 
-            // Primer triángulo
-
             triangles[triangleIndex++] =
                 current;
 
@@ -175,8 +180,6 @@ public class HyperbolicRoad : MonoBehaviour
             triangles[triangleIndex++] =
                 current + 1;
 
-
-            // Segundo triángulo
 
             triangles[triangleIndex++] =
                 current + 1;
@@ -193,23 +196,31 @@ public class HyperbolicRoad : MonoBehaviour
         // ASIGNAR MALLA
         // ==================================================
 
-        mesh.vertices = vertices;
-        mesh.triangles = triangles;
-        mesh.uv = uv;
+        mesh.vertices =
+            vertices;
 
+        mesh.triangles =
+            triangles;
 
-        // Normales
+        mesh.uv =
+            uv;
+
 
         mesh.RecalculateNormals();
-
         mesh.RecalculateBounds();
 
 
-        meshFilter.mesh = mesh;
+        meshFilter.mesh =
+            mesh;
+
+        hasGenerated =
+            true;
     }
 
 
-    private Vector3 ToUnityPosition(Vector2 point)
+    private Vector3 ToUnityPosition(
+        Vector2 point
+    )
     {
         return new Vector3(
             point.x * geodesic.diskScale,
