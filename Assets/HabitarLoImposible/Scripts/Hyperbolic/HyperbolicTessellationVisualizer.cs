@@ -1,21 +1,27 @@
 using UnityEngine;
 
-public class HyperbolicTessellationVisualizer: MonoBehaviour
+/// <summary>
+/// Genera una carretera por cada arista
+/// calculada por HyperbolicTessellation.
+///
+/// Las aristas ya están expresadas directamente
+/// en coordenadas del disco de Poincaré.
+/// </summary>
+public class HyperbolicTessellationVisualizer :
+    MonoBehaviour
 {
+    [Header("Espacio hiperbólico")]
+    [SerializeField]
+    private HyperbolicSpace hyperbolicSpace;
+
     [Header("Datos matemáticos")]
     public HyperbolicTessellation tessellation;
 
-    [Header("Escala del disco")]
-    public float diskScale = 50f;
-
-    [Header("Prefabs")]
-    public HyperbolicGeodesic geodesicPrefab;
+    [Header("Prefab")]
     public HyperbolicRoad roadPrefab;
 
-    [Header("Visualización")]
+    [Header("Generación")]
     public bool buildOnStart = true;
-    public bool generateRoads = true;
-    public bool showGeodesicLines = false;
 
     private Transform generatedRoot;
 
@@ -29,13 +35,11 @@ public class HyperbolicTessellationVisualizer: MonoBehaviour
     }
 
 
-    // ======================================================
-    // CONSTRUIR VISUALIZACIÓN
-    // ======================================================
-
     [ContextMenu("Reconstruir visualización")]
     public void RebuildView()
     {
+        FindReferences();
+
         if (tessellation != null)
         {
             tessellation.GenerateTessellation();
@@ -47,180 +51,125 @@ public class HyperbolicTessellationVisualizer: MonoBehaviour
 
     public void BuildView()
     {
+        FindReferences();
+
+        if (hyperbolicSpace == null)
+        {
+            Debug.LogError(
+                "HyperbolicTessellationVisualizer: " +
+                "falta HyperbolicSpace.",
+                this
+            );
+
+            return;
+        }
+
         if (tessellation == null)
         {
-            tessellation =
-                GetComponent<HyperbolicTessellation>();
-        }
-
-
-        if (tessellation == null)
-        {
             Debug.LogError(
-                "HyperbolicTessellationView: " +
-                "falta asignar la teselación."
+                "HyperbolicTessellationVisualizer: " +
+                "falta HyperbolicTessellation.",
+                this
             );
 
             return;
         }
 
-
-        if (geodesicPrefab == null)
+        if (roadPrefab == null)
         {
             Debug.LogError(
-                "HyperbolicTessellationView: " +
-                "falta asignar Geodesic Prefab."
+                "HyperbolicTessellationVisualizer: " +
+                "falta Road Prefab.",
+                this
             );
 
             return;
         }
-
-
-        if (generateRoads &&
-            roadPrefab == null)
-        {
-            Debug.LogError(
-                "HyperbolicTessellationView: " +
-                "falta asignar Road Prefab."
-            );
-
-            return;
-        }
-
-
-        // Si todavía no hay datos,
-        // los generamos antes de construir.
 
         if (tessellation.Edges.Count == 0)
         {
             tessellation.GenerateTessellation();
         }
 
-
         ClearView();
         CreateGeneratedRoot();
 
-
         int edgeIndex = 0;
-
 
         foreach (HyperbolicEdge edge
                  in tessellation.Edges)
         {
             edgeIndex++;
 
-            CreateEdgeView(
+            CreateRoad(
                 edge,
                 edgeIndex
             );
         }
-
-
-        Debug.Log(
-            $"Visualización construida.\n" +
-            $"Geodésicas: {edgeIndex}\n" +
-            $"Carreteras: " +
-            $"{(generateRoads ? edgeIndex : 0)}"
-        );
     }
 
 
-    // ======================================================
-    // CREAR REPRESENTACIÓN DE UN LADO
-    // ======================================================
+    private void FindReferences()
+    {
+        if (hyperbolicSpace == null)
+        {
+            hyperbolicSpace =
+                GetComponentInParent<HyperbolicSpace>();
+        }
 
-    private void CreateEdgeView(
+        if (tessellation == null)
+        {
+            tessellation =
+                GetComponent<HyperbolicTessellation>();
+
+            if (tessellation == null)
+            {
+                tessellation =
+                    GetComponentInParent<
+                        HyperbolicTessellation
+                    >();
+            }
+        }
+    }
+
+
+    private void CreateRoad(
         HyperbolicEdge edge,
         int edgeIndex
     )
     {
-        HyperbolicGeodesic geodesic =
-            Instantiate(
-                geodesicPrefab,
-                generatedRoot
-            );
-
-
-        geodesic.name =
-            $"Geodesic_{edgeIndex:000}";
-
-
-        ResetLocalTransform(
-            geodesic.transform
-        );
-
-
-        geodesic.pointA =
-            HyperbolicPoint.PoincareToHyperboloid(
-                edge.pointA
-            );
-
-        geodesic.pointB =
-            HyperbolicPoint.PoincareToHyperboloid(
-                edge.pointB
-            );
-
-        geodesic.diskScale =
-            diskScale;
-
-
-        geodesic.DrawGeodesic();
-
-
-        LineRenderer line =
-            geodesic.GetComponent<LineRenderer>();
-
-
-        if (line != null)
-        {
-            line.enabled =
-                showGeodesicLines;
-        }
-
-
-        if (!generateRoads)
-        {
-            return;
-        }
-
-
         HyperbolicRoad road =
             Instantiate(
                 roadPrefab,
                 generatedRoot
             );
 
-
         road.name =
             $"Road_{edgeIndex:000}";
-
 
         ResetLocalTransform(
             road.transform
         );
 
-
+        // Los puntos de la arista ya pertenecen
+        // al disco de Poincaré.
         road.Initialize(
-            geodesic
+            edge.pointA,
+            edge.pointB,
+            hyperbolicSpace
         );
     }
 
-
-    // ======================================================
-    // JERARQUÍA
-    // ======================================================
 
     private void CreateGeneratedRoot()
     {
         GameObject rootObject =
             new GameObject(
-                "GeneratedTessellationView"
+                "GeneratedTessellationRoads"
             );
-
 
         generatedRoot =
             rootObject.transform;
-
 
         generatedRoot.SetParent(
             transform,
@@ -244,25 +193,19 @@ public class HyperbolicTessellationVisualizer: MonoBehaviour
     }
 
 
-    // ======================================================
-    // LIMPIAR VISUALIZACIÓN
-    // ======================================================
-
     [ContextMenu("Eliminar visualización")]
     public void ClearView()
     {
         Transform existingRoot =
             transform.Find(
-                "GeneratedTessellationView"
+                "GeneratedTessellationRoads"
             );
-
 
         if (existingRoot == null)
         {
             generatedRoot = null;
             return;
         }
-
 
         if (Application.isPlaying)
         {
@@ -276,7 +219,6 @@ public class HyperbolicTessellationVisualizer: MonoBehaviour
                 existingRoot.gameObject
             );
         }
-
 
         generatedRoot = null;
     }

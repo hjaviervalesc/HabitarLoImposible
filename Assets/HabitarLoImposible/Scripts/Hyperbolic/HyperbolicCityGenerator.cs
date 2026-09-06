@@ -3,143 +3,119 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class HyperboliceCityGenerator : MonoBehaviour
+/// <summary>
+/// Genera los elementos de la ciudad hiperbólica.
+///
+/// Los edificios se sitúan junto a las carreteras.
+/// Los objetos libres se distribuyen por el disco.
+/// Se evitan solapamientos entre objetos y carreteras.
+/// </summary>
+public class HyperbolicCityGenerator : MonoBehaviour
 {
-    // ======================================================
-    // REGLA DE GENERACIÓN
-    // ======================================================
-
     [Serializable]
     public class SpawnRule
     {
         [Header("Tipo")]
         public string objectTypeName = "Casas";
 
+        [Header("Prefabs")]
         public GameObject[] prefabs;
 
-        [Header("Cantidad total en el disco")]
+        [Header("Cantidad")]
         [Min(0)]
-        public int minimumAmount = 30;
+        public int amount = 30;
 
-        [Min(0)]
-        public int maximumAmount = 40;
-
-        [Header("Escala")]
+        [Header("Colocación")]
         [Tooltip(
-            "Escala del prefab en el centro del disco."
-        )]
-        [Min(0.01f)]
-        public float baseScale = 1f;
-
-        [Header("Separación entre objetos")]
-        [Tooltip(
-            "Separación adicional respecto a otros objetos."
-        )]
-        [Min(0f)]
-        public float extraSeparation = 0.5f;
-
-        [Header("Distancia a la carretera")]
-        [Tooltip(
-            "Espacio adicional entre el límite del objeto " +
-            "y el borde de la carretera."
-        )]
-        [Min(0f)]
-        public float minimumRoadDistance = 1f;
-
-        [Tooltip(
-            "Distancia máxima desde el pivote hasta " +
-            "la carretera. Pon 0 para desactivarla."
-        )]
-        [Min(0f)]
-        public float maximumRoadDistance = 10f;
-
-        [Header("Altura")]
-        public float height = 0.5f;
-
-        [Header("Orientación")]
-        [Tooltip(
-            "El eje local -X del prefab mira " +
-            "hacia la carretera."
+            "Si está activado, el objeto se coloca " +
+            "junto a una carretera y mira hacia ella."
         )]
         public bool faceNearestRoad = true;
     }
 
-    // ======================================================
-    // HUELLA OCUPADA EN EL PLANO X-Z
-    // ======================================================
 
+    /// <summary>
+    /// Huella ocupada por un objeto sobre el plano X-Z.
+    /// </summary>
     private struct OccupiedFootprint
     {
         public Rect rectangle;
 
-        public OccupiedFootprint(
-            Rect rectangle
-        )
+        public OccupiedFootprint(Rect rectangle)
         {
             this.rectangle = rectangle;
         }
     }
 
-    // ======================================================
-    // CONFIGURACIÓN
-    // ======================================================
 
-    [Header("Escala del disco")]
-    [Min(0.01f)]
-    public float diskScale = 50f;
+    [Header("Espacio hiperbólico")]
+    [SerializeField]
+    private HyperbolicSpace hyperbolicSpace;
+
 
     [Header("Zona de generación")]
     [Range(0.1f, 0.99f)]
     public float generationRadius = 0.92f;
 
-    [Header("Carreteras")]
+
+    [Header("Distribución libre")]
     [Tooltip(
-        "Mitad de la anchura visual de la carretera."
+        "Se aplica a los objetos que no se colocan " +
+        "directamente junto a carreteras."
+    )]
+    public bool useHyperbolicDistribution = true;
+
+
+    [Header("Colocación junto a carreteras")]
+    [Tooltip(
+        "Espacio entre el borde del edificio " +
+        "y el borde de la carretera."
     )]
     [Min(0f)]
-    public float roadHalfWidth = 1.5f;
+    public float buildingRoadGap = 0.10f;
 
-    [Tooltip(
-        "Puntos examinados en cada geodésica."
-    )]
-    [Range(4, 50)]
-    public int samplesPerGeodesic = 20;
 
     [Header("Tipos de objetos")]
-    [Tooltip(
-        "Genera primero bancos y supermercados, " +
-        "después casas y finalmente árboles."
-    )]
     public SpawnRule[] spawnRules;
 
-    [Header("Rendimiento para Quest")]
+
+    [Header("Rendimiento")]
     [Min(1)]
-    public int maximumAttemptsPerObject = 25;
+    public int maximumAttemptsPerObject = 30;
 
     [Min(1)]
     public int maximumTotalObjects = 250;
 
+
     [Header("Generación")]
     public bool generateOnStart = true;
+
     public bool useFixedSeed = true;
+
     public int seed = 12345;
 
-    // ======================================================
-    // DATOS INTERNOS
-    // ======================================================
 
-    private readonly List<HyperbolicGeodesic> geodesics =
-        new List<HyperbolicGeodesic>();
+    private readonly List<HyperbolicRoad> roads =
+        new List<HyperbolicRoad>();
 
-    private readonly List<OccupiedFootprint> occupiedFootprints =
-        new List<OccupiedFootprint>();
+
+    private readonly List<OccupiedFootprint>
+        occupiedFootprints =
+            new List<OccupiedFootprint>();
+
+
+    /*
+     * Buffer reutilizable para evitar crear
+     * un nuevo array en cada consulta física.
+     */
+    private readonly Collider[] roadOverlapBuffer =
+        new Collider[64];
+
 
     private Transform generatedRoot;
+
     private int generatedObjectCount;
 
-    // ======================================================
-    // INICIO
-    // ======================================================
 
     private IEnumerator Start()
     {
@@ -148,43 +124,56 @@ public class HyperboliceCityGenerator : MonoBehaviour
             yield break;
         }
 
-        // Esperamos a que el visualizador
-        // construya las geodésicas.
-
+        // Permite que primero se generen
+        // las carreteras y sus colliders.
         yield return null;
 
         GenerateCity();
     }
 
-    // ======================================================
-    // GENERAR CIUDAD
-    // ======================================================
 
+    /// <summary>
+    /// Genera toda la ciudad.
+    /// </summary>
     [ContextMenu("Generar ciudad")]
     public void GenerateCity()
     {
+        FindReferences();
+
+        if (hyperbolicSpace == null)
+        {
+            Debug.LogError(
+                "HyperbolicCityGenerator: " +
+                "falta HyperbolicSpace."
+            );
+
+            return;
+        }
+
         if (spawnRules == null ||
             spawnRules.Length == 0)
         {
             Debug.LogWarning(
-                "HyperboliceCityGenerator: " +
+                "HyperbolicCityGenerator: " +
                 "no hay reglas configuradas."
             );
 
             return;
         }
 
-        FindGeneratedGeodesics();
+        FindGeneratedRoads();
 
-        if (geodesics.Count == 0)
+        if (roads.Count == 0)
         {
             Debug.LogError(
-                "HyperboliceCityGenerator: " +
-                "no se han encontrado geodésicas."
+                "HyperbolicCityGenerator: " +
+                "no se encontraron carreteras."
             );
 
             return;
         }
+
+        EnableRoadColliders();
 
         ClearCity();
 
@@ -196,6 +185,7 @@ public class HyperboliceCityGenerator : MonoBehaviour
         CreateGeneratedRoot();
 
         occupiedFootprints.Clear();
+
         generatedObjectCount = 0;
 
         foreach (SpawnRule rule in spawnRules)
@@ -209,40 +199,95 @@ public class HyperboliceCityGenerator : MonoBehaviour
             GenerateObjectsForRule(rule);
         }
 
+        /*
+         * Después de generar la ciudad ya no
+         * necesitamos los colliders de carretera.
+         */
+        DisableRoadColliders();
+
         Debug.Log(
-            $"Ciudad generada.\n" +
-            $"Geodésicas: {geodesics.Count}\n" +
+            "Ciudad hiperbólica generada. " +
             $"Objetos: {generatedObjectCount}"
         );
     }
 
-    // ======================================================
-    // BUSCAR GEODÉSICAS
-    // ======================================================
 
-    private void FindGeneratedGeodesics()
+    private void FindReferences()
     {
-        geodesics.Clear();
+        if (hyperbolicSpace == null)
+        {
+            hyperbolicSpace =
+                GetComponentInParent<
+                    HyperbolicSpace
+                >();
+        }
+    }
 
-        HyperbolicGeodesic[] foundGeodesics =
-            FindObjectsByType<HyperbolicGeodesic>(
+
+    /// <summary>
+    /// Busca todas las carreteras activas.
+    /// </summary>
+    private void FindGeneratedRoads()
+    {
+        roads.Clear();
+
+        HyperbolicRoad[] foundRoads =
+            FindObjectsByType<HyperbolicRoad>(
                 FindObjectsSortMode.None
             );
 
-        foreach (HyperbolicGeodesic geodesic
-                 in foundGeodesics)
+        foreach (HyperbolicRoad road
+                 in foundRoads)
         {
-            if (geodesic != null &&
-                geodesic.gameObject.activeInHierarchy)
+            if (road != null &&
+                road.gameObject.activeInHierarchy &&
+                road.Geodesic != null)
             {
-                geodesics.Add(geodesic);
+                roads.Add(road);
             }
         }
     }
 
-    // ======================================================
-    // GENERAR UNA CATEGORÍA
-    // ======================================================
+
+    private void EnableRoadColliders()
+    {
+        foreach (HyperbolicRoad road in roads)
+        {
+            if (road == null)
+            {
+                continue;
+            }
+
+            MeshCollider roadCollider =
+                road.GetComponent<MeshCollider>();
+
+            if (roadCollider != null)
+            {
+                roadCollider.enabled = true;
+            }
+        }
+    }
+
+
+    private void DisableRoadColliders()
+    {
+        foreach (HyperbolicRoad road in roads)
+        {
+            if (road == null)
+            {
+                continue;
+            }
+
+            MeshCollider roadCollider =
+                road.GetComponent<MeshCollider>();
+
+            if (roadCollider != null)
+            {
+                roadCollider.enabled = false;
+            }
+        }
+    }
+
 
     private void GenerateObjectsForRule(
         SpawnRule rule
@@ -250,33 +295,14 @@ public class HyperboliceCityGenerator : MonoBehaviour
     {
         if (rule == null ||
             rule.prefabs == null ||
-            rule.prefabs.Length == 0)
+            rule.prefabs.Length == 0 ||
+            rule.amount <= 0)
         {
             return;
         }
 
-        int minimum =
-            Mathf.Min(
-                rule.minimumAmount,
-                rule.maximumAmount
-            );
-
-        int maximum =
-            Mathf.Max(
-                rule.minimumAmount,
-                rule.maximumAmount
-            );
-
-        int requestedAmount =
-            UnityEngine.Random.Range(
-                minimum,
-                maximum + 1
-            );
-
-        int generatedForRule = 0;
-
         for (int objectIndex = 0;
-             objectIndex < requestedAmount;
+             objectIndex < rule.amount;
              objectIndex++)
         {
             if (generatedObjectCount >=
@@ -285,24 +311,248 @@ public class HyperboliceCityGenerator : MonoBehaviour
                 break;
             }
 
-            if (TryCreateObject(rule))
+            if (rule.faceNearestRoad)
             {
-                generatedForRule++;
+                TryCreateObjectNextToRoad(rule);
+            }
+            else
+            {
+                TryCreateFreeObject(rule);
             }
         }
-
-        Debug.Log(
-            $"{rule.objectTypeName}: " +
-            $"{generatedForRule}/" +
-            $"{requestedAmount} generados."
-        );
     }
 
-    // ======================================================
-    // INTENTAR CREAR OBJETO
-    // ======================================================
 
-    private bool TryCreateObject(
+    /// <summary>
+    /// Intenta crear un objeto junto
+    /// a una carretera.
+    /// </summary>
+    private bool TryCreateObjectNextToRoad(
+        SpawnRule rule
+    )
+    {
+        for (int attempt = 0;
+             attempt < maximumAttemptsPerObject;
+             attempt++)
+        {
+            GameObject prefab =
+                GetRandomValidPrefab(
+                    rule.prefabs
+                );
+
+            if (prefab == null)
+            {
+                return false;
+            }
+
+            HyperbolicRoad road =
+                roads[
+                    UnityEngine.Random.Range(
+                        0,
+                        roads.Count
+                    )
+                ];
+
+            /*
+             * Puede utilizar cualquier punto
+             * de la carretera, incluidos sus extremos.
+             */
+            float t =
+                UnityEngine.Random.value;
+
+            Vector2 roadPointPoincare =
+                road.Geodesic.GetPointAt(t);
+
+            Vector2 tangent =
+                road.Geodesic.GetTangentAt(t);
+
+            Vector2 normal =
+                new Vector2(
+                    -tangent.y,
+                    tangent.x
+                ).normalized;
+
+            /*
+             * Selecciona aleatoriamente uno
+             * de los dos lados de la carretera.
+             */
+            if (UnityEngine.Random.value < 0.5f)
+            {
+                normal = -normal;
+            }
+
+            Vector2 roadPointUnity =
+                hyperbolicSpace
+                    .PoincareToUnity2D(
+                        roadPointPoincare
+                    );
+
+            float scaleFactor =
+                hyperbolicSpace.GetScaleFactor(
+                    roadPointPoincare
+                );
+
+            GameObject candidate =
+                Instantiate(
+                    prefab,
+                    generatedRoot
+                );
+
+            candidate.name =
+                $"{rule.objectTypeName}_Candidate";
+
+            float prefabHeight =
+                candidate.transform.localPosition.y;
+
+            candidate.transform.localScale =
+                prefab.transform.localScale *
+                scaleFactor;
+
+            /*
+             * Colocación temporal para calcular
+             * los Bounds después de orientarlo.
+             */
+            candidate.transform.localPosition =
+                hyperbolicSpace.PoincareToUnity(
+                    roadPointPoincare,
+                    prefabHeight
+                );
+
+            /*
+             * El eje -X mira hacia la carretera.
+             */
+            OrientNegativeXAxisTowardsDirection(
+                candidate.transform,
+                -normal
+            );
+
+            if (!TryGetObjectBounds(
+                candidate,
+                out Bounds candidateBounds
+            ))
+            {
+                DestroyCandidate(candidate);
+
+                Debug.LogWarning(
+                    $"El prefab {prefab.name} " +
+                    "no tiene ningún Renderer."
+                );
+
+                return false;
+            }
+
+            /*
+             * Tamaño del objeto en la dirección
+             * en la que se encuentra la carretera.
+             */
+            float objectExtentTowardsRoad =
+                GetExtentTowardsDirection(
+                    candidateBounds,
+                    candidate.transform.position,
+                    -normal
+                );
+
+            float scaledRoadGap =
+                buildingRoadGap *
+                scaleFactor;
+
+            float roadHalfWidth =
+                road.GetHalfWidthAt(
+                    roadPointPoincare
+                );
+
+            float distanceFromRoadCenter =
+                roadHalfWidth +
+                objectExtentTowardsRoad +
+                scaledRoadGap;
+
+            /*
+             * Posición definitiva de la casa.
+             */
+            Vector2 finalUnityPosition =
+                roadPointUnity +
+                normal *
+                distanceFromRoadCenter;
+
+            Vector2 finalPoincarePosition =
+                hyperbolicSpace.UnityToPoincare(
+                    finalUnityPosition
+                );
+
+            if (!hyperbolicSpace.IsInsideDisk(
+                finalPoincarePosition,
+                generationRadius
+            ))
+            {
+                DestroyCandidate(candidate);
+                continue;
+            }
+
+            candidate.transform.localPosition =
+                new Vector3(
+                    finalUnityPosition.x,
+                    prefabHeight,
+                    finalUnityPosition.y
+                );
+
+            /*
+             * Obtiene los Bounds definitivos.
+             */
+            if (!TryGetObjectBounds(
+                candidate,
+                out candidateBounds
+            ))
+            {
+                DestroyCandidate(candidate);
+                continue;
+            }
+
+            /*
+             * Si toca cualquier carretera,
+             * el objeto se elimina.
+             */
+            if (TouchesAnyRoadCollider(
+                candidateBounds
+            ))
+            {
+                DestroyCandidate(candidate);
+                continue;
+            }
+
+            Rect candidateFootprint =
+                CreateFootprintRectangle(
+                    candidateBounds
+                );
+
+            /*
+             * Si toca otro objeto,
+             * también se elimina.
+             */
+            if (OverlapsAnotherObject(
+                candidateFootprint
+            ))
+            {
+                DestroyCandidate(candidate);
+                continue;
+            }
+
+            AcceptCandidate(
+                candidate,
+                rule,
+                candidateFootprint
+            );
+
+            return true;
+        }
+
+        return false;
+    }
+
+
+    /// <summary>
+    /// Intenta colocar libremente un objeto.
+    /// </summary>
+    private bool TryCreateFreeObject(
         SpawnRule rule
     )
     {
@@ -323,18 +573,8 @@ public class HyperboliceCityGenerator : MonoBehaviour
             Vector2 poincarePosition =
                 GetRandomPointInsideDisk();
 
-            Vector2 localUnityPosition =
-                poincarePosition *
-                diskScale;
-
-            FindNearestRoadPoint(
-                poincarePosition,
-                out Vector2 nearestRoadLocalPoint,
-                out float distanceToRoad
-            );
-
-            float poincareScale =
-                GetPoincareScaleFactor(
+            float scaleFactor =
+                hyperbolicSpace.GetScaleFactor(
                     poincarePosition
                 );
 
@@ -347,43 +587,33 @@ public class HyperboliceCityGenerator : MonoBehaviour
             candidate.name =
                 $"{rule.objectTypeName}_Candidate";
 
+            float prefabHeight =
+                candidate.transform.localPosition.y;
+
             candidate.transform.localPosition =
-                new Vector3(
-                    localUnityPosition.x,
-                    rule.height,
-                    localUnityPosition.y
+                hyperbolicSpace.PoincareToUnity(
+                    poincarePosition,
+                    prefabHeight
                 );
 
             candidate.transform.localScale =
                 prefab.transform.localScale *
-                rule.baseScale *
-                poincareScale;
+                scaleFactor;
 
-            if (rule.faceNearestRoad)
-            {
-                OrientNegativeXAxisTowardsRoad(
-                    candidate.transform,
-                    localUnityPosition,
-                    nearestRoadLocalPoint
-                );
-            }
-            else
-            {
-                candidate.transform.localRotation =
-                    Quaternion.Euler(
+            candidate.transform.localRotation =
+                Quaternion.Euler(
+                    0f,
+                    UnityEngine.Random.Range(
                         0f,
-                        UnityEngine.Random.Range(
-                            0f,
-                            360f
-                        ),
-                        0f
-                    );
-            }
+                        360f
+                    ),
+                    0f
+                );
 
             if (!TryGetObjectBounds(
-                    candidate,
-                    out Bounds candidateBounds
-                ))
+                candidate,
+                out Bounds candidateBounds
+            ))
             {
                 DestroyCandidate(candidate);
 
@@ -395,27 +625,9 @@ public class HyperboliceCityGenerator : MonoBehaviour
                 return false;
             }
 
-            float footprintRadius =
-                GetFootprintRadius(
-                    candidateBounds,
-                    candidate.transform.position
-                );
-
-            float requiredRoadDistance =
-                roadHalfWidth +
-                footprintRadius +
-                rule.minimumRoadDistance;
-
-            if (distanceToRoad <
-                requiredRoadDistance)
-            {
-                DestroyCandidate(candidate);
-                continue;
-            }
-
-            if (rule.maximumRoadDistance > 0f &&
-                distanceToRoad >
-                rule.maximumRoadDistance)
+            if (TouchesAnyRoadCollider(
+                candidateBounds
+            ))
             {
                 DestroyCandidate(candidate);
                 continue;
@@ -423,29 +635,22 @@ public class HyperboliceCityGenerator : MonoBehaviour
 
             Rect candidateFootprint =
                 CreateFootprintRectangle(
-                    candidateBounds,
-                    rule.extraSeparation
+                    candidateBounds
                 );
 
             if (OverlapsAnotherObject(
-                    candidateFootprint
-                ))
+                candidateFootprint
+            ))
             {
                 DestroyCandidate(candidate);
                 continue;
             }
 
-            candidate.name =
-                $"{rule.objectTypeName}_" +
-                $"{generatedObjectCount:000}";
-
-            occupiedFootprints.Add(
-                new OccupiedFootprint(
-                    candidateFootprint
-                )
+            AcceptCandidate(
+                candidate,
+                rule,
+                candidateFootprint
             );
-
-            generatedObjectCount++;
 
             return true;
         }
@@ -453,10 +658,93 @@ public class HyperboliceCityGenerator : MonoBehaviour
         return false;
     }
 
-    // ======================================================
-    // POSICIÓN ALEATORIA
-    // ======================================================
 
+    /// <summary>
+    /// Comprueba mediante físicas si el volumen
+    /// del objeto toca una carretera.
+    /// </summary>
+    private bool TouchesAnyRoadCollider(
+        Bounds objectBounds
+    )
+    {
+        Vector3 halfExtents =
+            objectBounds.extents *
+            0.99f;
+
+        /*
+         * Aumentamos la altura de la consulta para
+         * comprobar la ocupación sobre X-Z aunque
+         * la malla del edificio empiece ligeramente
+         * por encima de la carretera.
+         */
+        halfExtents.y =
+            Mathf.Max(
+                halfExtents.y,
+                2f
+            );
+
+        int colliderCount =
+            Physics.OverlapBoxNonAlloc(
+                objectBounds.center,
+                halfExtents,
+                roadOverlapBuffer,
+                Quaternion.identity,
+                ~0,
+                QueryTriggerInteraction.Collide
+            );
+
+        for (int i = 0;
+             i < colliderCount;
+             i++)
+        {
+            Collider detectedCollider =
+                roadOverlapBuffer[i];
+
+            if (detectedCollider == null)
+            {
+                continue;
+            }
+
+            HyperbolicRoad detectedRoad =
+                detectedCollider
+                    .GetComponentInParent<
+                        HyperbolicRoad
+                    >();
+
+            if (detectedRoad != null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+
+    private void AcceptCandidate(
+        GameObject candidate,
+        SpawnRule rule,
+        Rect footprint
+    )
+    {
+        candidate.name =
+            $"{rule.objectTypeName}_" +
+            $"{generatedObjectCount:000}";
+
+        occupiedFootprints.Add(
+            new OccupiedFootprint(
+                footprint
+            )
+        );
+
+        generatedObjectCount++;
+    }
+
+
+    /// <summary>
+    /// Obtiene una posición aleatoria para
+    /// los objetos de distribución libre.
+    /// </summary>
     private Vector2 GetRandomPointInsideDisk()
     {
         float angle =
@@ -465,135 +753,52 @@ public class HyperboliceCityGenerator : MonoBehaviour
                 Mathf.PI * 2f
             );
 
-        float radius =
-            Mathf.Sqrt(
-                UnityEngine.Random.value
-            ) *
-            generationRadius;
+        float radius;
+
+        if (useHyperbolicDistribution)
+        {
+            float maximumRadiusSquared =
+                generationRadius *
+                generationRadius;
+
+            float maximumHyperbolicArea =
+                maximumRadiusSquared /
+                (1f - maximumRadiusSquared);
+
+            float randomHyperbolicArea =
+                UnityEngine.Random.value *
+                maximumHyperbolicArea;
+
+            radius =
+                Mathf.Sqrt(
+                    randomHyperbolicArea /
+                    (1f + randomHyperbolicArea)
+                );
+        }
+        else
+        {
+            radius =
+                Mathf.Sqrt(
+                    UnityEngine.Random.value
+                ) *
+                generationRadius;
+        }
 
         return new Vector2(
             Mathf.Cos(angle),
             Mathf.Sin(angle)
-        ) *
-        radius;
+        ) * radius;
     }
 
-    // ======================================================
-    // CARRETERA MÁS CERCANA
-    // ======================================================
 
-    private void FindNearestRoadPoint(
-        Vector2 poincarePosition,
-        out Vector2 nearestRoadPoint,
-        out float nearestDistance
-    )
-    {
-        Vector2 unityPosition =
-            poincarePosition *
-            diskScale;
-
-        nearestRoadPoint = Vector2.zero;
-
-        float nearestSquaredDistance =
-            float.MaxValue;
-
-        foreach (HyperbolicGeodesic geodesic
-                 in geodesics)
-        {
-            for (int sample = 0;
-                 sample <= samplesPerGeodesic;
-                 sample++)
-            {
-                float t =
-                    sample /
-                    (float)samplesPerGeodesic;
-
-                Vector2 roadPoint =
-                    geodesic.GetPointAt(t) *
-                    diskScale;
-
-                float squaredDistance =
-                    (
-                        unityPosition -
-                        roadPoint
-                    ).sqrMagnitude;
-
-                if (squaredDistance <
-                    nearestSquaredDistance)
-                {
-                    nearestSquaredDistance =
-                        squaredDistance;
-
-                    nearestRoadPoint =
-                        roadPoint;
-                }
-            }
-        }
-
-        nearestDistance =
-            Mathf.Sqrt(
-                nearestSquaredDistance
-            );
-    }
-
-    // ======================================================
-    // OBTENER TAMAÑO REAL DEL OBJETO
-    // ======================================================
-
-    private bool TryGetObjectBounds(
-        GameObject target,
-        out Bounds combinedBounds
-    )
-    {
-        Renderer[] renderers =
-            target.GetComponentsInChildren<Renderer>();
-
-        if (renderers == null ||
-            renderers.Length == 0)
-        {
-            combinedBounds =
-                new Bounds();
-
-            return false;
-        }
-
-        bool boundsInitialized = false;
-        combinedBounds = new Bounds();
-
-        foreach (Renderer objectRenderer
-                 in renderers)
-        {
-            if (objectRenderer == null ||
-                !objectRenderer.enabled)
-            {
-                continue;
-            }
-
-            if (!boundsInitialized)
-            {
-                combinedBounds =
-                    objectRenderer.bounds;
-
-                boundsInitialized = true;
-            }
-            else
-            {
-                combinedBounds.Encapsulate(
-                    objectRenderer.bounds
-                );
-            }
-        }
-
-        return boundsInitialized;
-    }
-
-    // ======================================================
-    // RADIO RESPECTO A LA CARRETERA
-    // ======================================================
-
-    private float GetFootprintRadius(
+    /// <summary>
+    /// Calcula cuánto sobresale el objeto desde
+    /// su pivote en una dirección determinada.
+    /// </summary>
+    private float GetExtentTowardsDirection(
         Bounds bounds,
-        Vector3 pivotPosition
+        Vector3 pivotPosition,
+        Vector2 direction
     )
     {
         Vector2 pivot =
@@ -626,82 +831,90 @@ public class HyperboliceCityGenerator : MonoBehaviour
                 bounds.max.z
             );
 
-        float radiusA =
-            Vector2.Distance(
-                pivot,
-                cornerA
-            );
-
-        float radiusB =
-            Vector2.Distance(
-                pivot,
-                cornerB
-            );
-
-        float radiusC =
-            Vector2.Distance(
-                pivot,
-                cornerC
-            );
-
-        float radiusD =
-            Vector2.Distance(
-                pivot,
-                cornerD
-            );
-
         return Mathf.Max(
-            radiusA,
-            radiusB,
-            radiusC,
-            radiusD
+            0f,
+
+            Vector2.Dot(
+                cornerA - pivot,
+                direction
+            ),
+
+            Vector2.Dot(
+                cornerB - pivot,
+                direction
+            ),
+
+            Vector2.Dot(
+                cornerC - pivot,
+                direction
+            ),
+
+            Vector2.Dot(
+                cornerD - pivot,
+                direction
+            )
         );
     }
 
-    // ======================================================
-    // RECTÁNGULO DE OCUPACIÓN
-    // ======================================================
 
-    private Rect CreateFootprintRectangle(
-        Bounds bounds,
-        float extraSeparation
+    /// <summary>
+    /// Obtiene los Bounds conjuntos de
+    /// todos los Renderer de un objeto.
+    /// </summary>
+    private bool TryGetObjectBounds(
+        GameObject target,
+        out Bounds combinedBounds
     )
     {
-        // Cada objeto aporta la mitad del margen.
-        // Al comparar dos rectángulos, ambas mitades
-        // forman la separación completa.
+        Renderer[] renderers =
+            target.GetComponentsInChildren<
+                Renderer
+            >();
 
-        float margin =
-            extraSeparation *
-            0.5f;
+        combinedBounds = new Bounds();
 
-        float minimumX =
-            bounds.min.x -
-            margin;
+        bool initialized = false;
 
-        float maximumX =
-            bounds.max.x +
-            margin;
+        foreach (Renderer objectRenderer
+                 in renderers)
+        {
+            if (objectRenderer == null ||
+                !objectRenderer.enabled)
+            {
+                continue;
+            }
 
-        float minimumZ =
-            bounds.min.z -
-            margin;
+            if (!initialized)
+            {
+                combinedBounds =
+                    objectRenderer.bounds;
 
-        float maximumZ =
-            bounds.max.z +
-            margin;
+                initialized = true;
+            }
+            else
+            {
+                combinedBounds.Encapsulate(
+         objectRenderer.bounds
+     );
+            }
+        }
 
+        return initialized;
+    }
+
+
+    private Rect CreateFootprintRectangle(
+        Bounds bounds
+    )
+    {
         return Rect.MinMaxRect(
-            minimumX,
-            minimumZ,
-            maximumX,
-            maximumZ
+            bounds.min.x,
+            bounds.min.z,
+            bounds.max.x,
+            bounds.max.z
         );
     }
 
-    // ======================================================
-    // COMPROBAR SUPERPOSICIÓN
-    // ======================================================
 
     private bool OverlapsAnotherObject(
         Rect candidateFootprint
@@ -711,9 +924,9 @@ public class HyperboliceCityGenerator : MonoBehaviour
                  in occupiedFootprints)
         {
             if (candidateFootprint.Overlaps(
-                    occupied.rectangle,
-                    true
-                ))
+                occupied.rectangle,
+                true
+            ))
             {
                 return true;
             }
@@ -722,9 +935,6 @@ public class HyperboliceCityGenerator : MonoBehaviour
         return false;
     }
 
-    // ======================================================
-    // PREFAB ALEATORIO VÁLIDO
-    // ======================================================
 
     private GameObject GetRandomValidPrefab(
         GameObject[] prefabs
@@ -747,10 +957,7 @@ public class HyperboliceCityGenerator : MonoBehaviour
              offset++)
         {
             int index =
-                (
-                    initialIndex +
-                    offset
-                ) %
+                (initialIndex + offset) %
                 prefabs.Length;
 
             if (prefabs[index] != null)
@@ -762,35 +969,16 @@ public class HyperboliceCityGenerator : MonoBehaviour
         return null;
     }
 
-    // ======================================================
-    // ESCALA DE POINCARÉ
-    // ======================================================
 
-    private float GetPoincareScaleFactor(
-        Vector2 poincarePosition
-    )
-    {
-        return Mathf.Max(
-            0.001f,
-            1f -
-            poincarePosition.sqrMagnitude
-        );
-    }
-
-    // ======================================================
-    // ORIENTACIÓN HACIA LA CARRETERA
-    // ======================================================
-
-    private void OrientNegativeXAxisTowardsRoad(
+    /// <summary>
+    /// Orienta el eje local -X
+    /// en una dirección determinada.
+    /// </summary>
+    private void OrientNegativeXAxisTowardsDirection(
         Transform target,
-        Vector2 objectPosition,
-        Vector2 roadPosition
+        Vector2 direction
     )
     {
-        Vector2 direction =
-            roadPosition -
-            objectPosition;
-
         if (direction.sqrMagnitude <
             0.000001f)
         {
@@ -814,9 +1002,6 @@ public class HyperboliceCityGenerator : MonoBehaviour
             );
     }
 
-    // ======================================================
-    // DESTRUIR CANDIDATO RECHAZADO
-    // ======================================================
 
     private void DestroyCandidate(
         GameObject candidate
@@ -837,9 +1022,6 @@ public class HyperboliceCityGenerator : MonoBehaviour
         }
     }
 
-    // ======================================================
-    // JERARQUÍA
-    // ======================================================
 
     private void CreateGeneratedRoot()
     {
@@ -857,9 +1039,6 @@ public class HyperboliceCityGenerator : MonoBehaviour
         );
     }
 
-    // ======================================================
-    // LIMPIAR
-    // ======================================================
 
     [ContextMenu("Eliminar ciudad")]
     public void ClearCity()
@@ -886,7 +1065,9 @@ public class HyperboliceCityGenerator : MonoBehaviour
         }
 
         generatedRoot = null;
+
         occupiedFootprints.Clear();
+
         generatedObjectCount = 0;
     }
 }

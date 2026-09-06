@@ -1,136 +1,272 @@
 ﻿using System.Collections.Generic;
-using UnityEditor;
 using UnityEngine;
 
 public class DeformationSectionManager : MonoBehaviour
 {
     [Header("Grid")]
-    [SerializeField] private GridSurfaceMesh gridSurfaceMesh;
+    [SerializeField]
+    private GridSurfaceMesh gridSurfaceMesh;
 
-    [Header("Tamaño de las secciones")]
-    [SerializeField] private float sectionWidth = 1f;
+    [Header("Centro de la deformación")]
+    [Tooltip("Objeto colocado en el centro de la casa.")]
+    [SerializeField]
+    private Transform houseCenter;
 
+    [Header("Jugador")]
+    [SerializeField]
+    private Transform xrOrigin;
 
-    private List<DeformationSection> sections =
-        new List<DeformationSection>();
-
-
-    public List<DeformationSection> Sections => sections;
-
-    [Header("Debug Deformation")]
-    [SerializeField] private int testSection = 5;
-    [SerializeField] private float testDeformation = -0.01f;
-
-    [Header("Player")]
-    [SerializeField] private Transform xrOrigin;
+    [Header("Secciones")]
+    [Min(0.01f)]
+    [SerializeField]
+    private float sectionWidth = 1f;
 
     [Header("Deformación")]
-    [SerializeField] private float deformationPerSection = 0.01f;
+    [Tooltip(
+        "Altura añadida al atravesar cada sección hacia la casa."
+    )]
+    [Min(0f)]
+    [SerializeField]
+    private float deformationPerSection = 0.01f;
+
+    private readonly List<DeformationSection> sections =
+        new List<DeformationSection>();
+
+    private Vector2 localDeformationCenter;
     private int previousPlayerSection = -1;
 
-    private float currentDeformationRadius = 0f;
+    public List<DeformationSection> Sections =>
+        sections;
 
     private void Start()
     {
+        if (!ValidateReferences())
+        {
+            enabled = false;
+            return;
+        }
+
+        CalculateLocalDeformationCenter();
         CreateSections();
 
-        previousPlayerSection = GetPlayerSection();
+        if (sections.Count == 0)
+        {
+            Debug.LogError(
+                "No se ha podido crear ninguna sección.",
+                this
+            );
+
+            enabled = false;
+            return;
+        }
+
+        previousPlayerSection =
+            GetPlayerSection();
     }
 
     private void Update()
     {
-        int currentPlayerSection = GetPlayerSection();
+        int currentPlayerSection =
+            GetPlayerSection();
 
-        if (currentPlayerSection == previousPlayerSection)
+        if (currentPlayerSection ==
+            previousPlayerSection)
+        {
             return;
+        }
 
         UpdateDeformation(
             previousPlayerSection,
             currentPlayerSection
         );
 
-        previousPlayerSection = currentPlayerSection;
+        previousPlayerSection =
+            currentPlayerSection;
     }
 
+    private bool ValidateReferences()
+    {
+        if (gridSurfaceMesh == null)
+        {
+            Debug.LogError(
+                "No se ha asignado GridSurfaceMesh.",
+                this
+            );
 
+            return false;
+        }
+
+        if (houseCenter == null)
+        {
+            Debug.LogError(
+                "No se ha asignado HouseCenter.",
+                this
+            );
+
+            return false;
+        }
+
+        if (xrOrigin == null)
+        {
+            Debug.LogError(
+                "No se ha asignado XR Origin.",
+                this
+            );
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Convierte la posición de la casa al espacio
+    /// local de la malla.
+    /// </summary>
+    private void CalculateLocalDeformationCenter()
+    {
+        Vector3 localHousePosition =
+            gridSurfaceMesh.transform
+                .InverseTransformPoint(
+                    houseCenter.position
+                );
+
+        localDeformationCenter =
+            new Vector2(
+                localHousePosition.x,
+                localHousePosition.z
+            );
+    }
+
+    /// <summary>
+    /// Eleva las secciones cuando el jugador se acerca
+    /// y las baja cuando se aleja.
+    /// </summary>
     private void UpdateDeformation(
         int previousSection,
         int currentSection)
     {
-        int firstAffectedSection;
-        int lastAffectedSection;
+        int firstAffectedSection = 0;
+        int lastAffectedSection = 0;
 
-
-        // -----------------------------------------
-        // El jugador se acerca al centro
-        // -----------------------------------------
-
+        // El jugador se acerca a la casa.
         if (currentSection < previousSection)
         {
-            firstAffectedSection = 0;
-            lastAffectedSection = currentSection;
-
-            for (int i = 0; i <= currentSection; i++)
+            /*
+             * Reproducimos todos los cruces de sección.
+             * Esto también funciona si el jugador avanza
+             * varias secciones en un único frame.
+             */
+            for (int crossedSection =
+                     previousSection - 1;
+                 crossedSection >= currentSection;
+                 crossedSection--)
             {
-                sections[i].AddDeformation(
-                    -deformationPerSection
-                );
-            }
-        }
-
-
-        // -----------------------------------------
-        // El jugador se aleja del centro
-        // -----------------------------------------
-
-        else
-        {
-            firstAffectedSection = 0;
-            lastAffectedSection = previousSection;
-
-            for (int i = 0; i <= previousSection; i++)
-            {
-                sections[i].AddDeformation(
+                AddDeformationUntilSection(
+                    crossedSection,
                     deformationPerSection
                 );
             }
+
+            lastAffectedSection =
+                previousSection - 1;
         }
 
+        // El jugador se aleja de la casa.
+        else
+        {
+            for (int crossedSection =
+                     previousSection;
+                 crossedSection < currentSection;
+                 crossedSection++)
+            {
+                AddDeformationUntilSection(
+                    crossedSection,
+                    -deformationPerSection
+                );
+            }
 
-        // -----------------------------------------
-        // Actualizamos la malla UNA SOLA VEZ
-        // -----------------------------------------
+            lastAffectedSection =
+                currentSection - 1;
+        }
 
-        gridSurfaceMesh.ApplySectionDeformations(
-            sections,
-            firstAffectedSection,
-            lastAffectedSection
-        );
-    }
-    private int GetPlayerSection()
-    {
-        Vector2 playerPosition = new Vector2(
-            xrOrigin.position.x,
-            xrOrigin.position.z
-        );
-
-        float distance = playerPosition.magnitude;
-
-        int sectionIndex =
-            Mathf.FloorToInt(distance / sectionWidth);
-
-        sectionIndex = Mathf.Clamp(
-            sectionIndex,
+        lastAffectedSection = Mathf.Clamp(
+            lastAffectedSection,
             0,
             sections.Count - 1
         );
 
-        return sectionIndex;
+        gridSurfaceMesh.ApplySectionDeformations(
+            sections,
+            firstAffectedSection,
+            lastAffectedSection,
+            localDeformationCenter
+        );
+    }
+
+    /// <summary>
+    /// Añade una deformación a todas las secciones
+    /// comprendidas entre el centro y el índice indicado.
+    /// </summary>
+    private void AddDeformationUntilSection(
+        int lastSection,
+        float amount)
+    {
+        lastSection = Mathf.Clamp(
+            lastSection,
+            0,
+            sections.Count - 1
+        );
+
+        for (int i = 0;
+             i <= lastSection;
+             i++)
+        {
+            sections[i].AddDeformation(
+                amount
+            );
+        }
+    }
+
+    /// <summary>
+    /// Obtiene la sección en la que se encuentra
+    /// actualmente el jugador.
+    /// </summary>
+    private int GetPlayerSection()
+    {
+        Vector3 localPlayerPosition =
+            gridSurfaceMesh.transform
+                .InverseTransformPoint(
+                    xrOrigin.position
+                );
+
+        Vector2 playerXZ =
+            new Vector2(
+                localPlayerPosition.x,
+                localPlayerPosition.z
+            );
+
+        float distance =
+            Vector2.Distance(
+                playerXZ,
+                localDeformationCenter
+            );
+
+        int sectionIndex =
+            Mathf.FloorToInt(
+                distance / sectionWidth
+            );
+
+        return Mathf.Clamp(
+            sectionIndex,
+            0,
+            sections.Count - 1
+        );
     }
 
     /// <summary>
     /// Crea las secciones concéntricas alrededor
-    /// del centro de la malla.
+    /// de la posición de la casa.
     /// </summary>
     private void CreateSections()
     {
@@ -139,19 +275,29 @@ public class DeformationSectionManager : MonoBehaviour
         Vector3[] vertices =
             gridSurfaceMesh.Vertices;
 
-
-        // ------------------------------------------------
-        // 1. Averiguamos cuál es el radio máximo de la malla
-        // ------------------------------------------------
+        if (vertices == null ||
+            vertices.Length == 0)
+        {
+            return;
+        }
 
         float maxRadius = 0f;
 
+        // Buscamos el vértice más alejado
+        // respecto al centro de la casa.
         foreach (Vector3 vertex in vertices)
         {
-            float distance = Vector2.Distance(
-                Vector2.zero,
-                new Vector2(vertex.x, vertex.z)
-            );
+            Vector2 vertexXZ =
+                new Vector2(
+                    vertex.x,
+                    vertex.z
+                );
+
+            float distance =
+                Vector2.Distance(
+                    vertexXZ,
+                    localDeformationCenter
+                );
 
             if (distance > maxRadius)
             {
@@ -159,27 +305,24 @@ public class DeformationSectionManager : MonoBehaviour
             }
         }
 
-
-        // ------------------------------------------------
-        // 2. Calculamos cuántas secciones necesitamos
-        // ------------------------------------------------
-
         int sectionCount =
-            Mathf.CeilToInt(maxRadius / sectionWidth);
+            Mathf.Max(
+                1,
+                Mathf.CeilToInt(
+                    maxRadius / sectionWidth
+                )
+            );
 
-
-        // ------------------------------------------------
-        // 3. Creamos las secciones
-        // ------------------------------------------------
-
-        for (int i = 0; i < sectionCount; i++)
+        // Creamos las secciones.
+        for (int i = 0;
+             i < sectionCount;
+             i++)
         {
             float innerRadius =
                 i * sectionWidth;
 
             float outerRadius =
                 (i + 1) * sectionWidth;
-
 
             DeformationSection section =
                 new DeformationSection(
@@ -188,112 +331,124 @@ public class DeformationSectionManager : MonoBehaviour
                     outerRadius
                 );
 
-
             sections.Add(section);
         }
 
-
-        // ------------------------------------------------
-        // 4. Asignamos cada vértice a una sección
-        // ------------------------------------------------
-
-        for (int i = 0; i < vertices.Length; i++)
+        // Asignamos cada vértice a su sección.
+        for (int vertexIndex = 0;
+             vertexIndex < vertices.Length;
+             vertexIndex++)
         {
-            Vector3 vertex = vertices[i];
+            Vector3 vertex =
+                vertices[vertexIndex];
 
+            Vector2 vertexXZ =
+                new Vector2(
+                    vertex.x,
+                    vertex.z
+                );
 
-            float distance = Vector2.Distance(
-                Vector2.zero,
-                new Vector2(vertex.x, vertex.z)
-            );
-
+            float distance =
+                Vector2.Distance(
+                    vertexXZ,
+                    localDeformationCenter
+                );
 
             int sectionIndex =
                 Mathf.FloorToInt(
                     distance / sectionWidth
                 );
 
+            sectionIndex = Mathf.Clamp(
+                sectionIndex,
+                0,
+                sections.Count - 1
+            );
 
-            if (sectionIndex >= 0 &&
-                sectionIndex < sections.Count)
-            {
-                sections[sectionIndex]
-                    .AddVertex(i);
-            }
+            sections[sectionIndex]
+                .AddVertex(vertexIndex);
         }
     }
 
-    //private void OnDrawGizmos()
-    //{
-    //    if (gridSurfaceMesh == null)
-    //        return;
+    /// <summary>
+    /// Calcula el desplazamiento producido por la deformación
+    /// en una posición determinada del mundo.
+    /// </summary>
+    public Vector3 GetWorldDeformationAtPosition(
+        Vector3 worldPosition)
+    {
+        if (sections == null ||
+            sections.Count == 0)
+        {
+            return Vector3.zero;
+        }
 
-    //    if (gridSurfaceMesh.Vertices == null)
-    //        return;
+        Vector3 localPosition =
+            gridSurfaceMesh.transform
+                .InverseTransformPoint(
+                    worldPosition
+                );
 
-    //    if (sections == null || sections.Count == 0)
-    //        return;
+        Vector2 positionXZ =
+            new Vector2(
+                localPosition.x,
+                localPosition.z
+            );
 
-    //    Vector3[] vertices = gridSurfaceMesh.Vertices;
+        float distance =
+            Vector2.Distance(
+                positionXZ,
+                localDeformationCenter
+            );
 
-    //    for (int i = 0; i < sections.Count; i++)
-    //    {
-    //        DeformationSection section = sections[i];
+        int sectionIndex =
+            Mathf.FloorToInt(
+                distance / sectionWidth
+            );
 
-    //        float hue = (float)i / sections.Count;
+        sectionIndex = Mathf.Clamp(
+            sectionIndex,
+            0,
+            sections.Count - 1
+        );
 
-    //        Gizmos.color = Color.HSVToRGB(hue, 1f, 1f);
+        DeformationSection currentSection =
+            sections[sectionIndex];
 
-    //        foreach (int vertexIndex in section.VertexIndices)
-    //        {
-    //            if (vertexIndex < 0 ||
-    //                vertexIndex >= vertices.Length)
-    //                continue;
+        int nextSectionIndex =
+            Mathf.Min(
+                sectionIndex + 1,
+                sections.Count - 1
+            );
 
-    //            Vector3 vertexPosition =
-    //                gridSurfaceMesh.transform.TransformPoint(
-    //                    vertices[vertexIndex]
-    //                );
+        DeformationSection nextSection =
+            sections[nextSectionIndex];
 
-    //            Gizmos.DrawSphere(
-    //                vertexPosition,
-    //                0.05f
-    //            );
-    //        }
-    //    }
-    //}
+        float t = 0f;
+
+        if (currentSection.OuterRadius >
+            currentSection.InnerRadius)
+        {
+            t = Mathf.InverseLerp(
+                currentSection.InnerRadius,
+                currentSection.OuterRadius,
+                distance
+            );
+        }
+
+        float localDeformation =
+            Mathf.Lerp(
+                currentSection.CurrentOffset,
+                nextSection.CurrentOffset,
+                t
+            );
+
+        /*
+         * Convertimos el desplazamiento vertical local
+         * al espacio del mundo.
+         */
+        return gridSurfaceMesh.transform.TransformVector(
+            Vector3.up * localDeformation
+        );
+    }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

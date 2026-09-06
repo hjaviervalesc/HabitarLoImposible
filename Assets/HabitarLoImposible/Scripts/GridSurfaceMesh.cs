@@ -17,72 +17,44 @@ public class GridSurfaceMesh : MonoBehaviour
     private Mesh mesh;
 
     private Vector3[] vertices;
-
-    // Posición original de cada vértice
     private Vector3[] originalVertices;
-
     private int[] triangles;
 
-
-    [Header("Debug Deformation")]
-    [SerializeField] private float slopeDepth = 1f;
-    [SerializeField] private float slopeStart = -5f;
-    [SerializeField] private float slopeEnd = 5f;
-
-
-    [Header("Test Embudo")]
-    [SerializeField] private float holeRadius = 10f;
-    [SerializeField] private float holeDepth = 3f;
-
+    private MeshCollider meshCollider;
 
     public Mesh Mesh => mesh;
-
     public Vector3[] Vertices => vertices;
-
     public int Width => width;
-
     public int Height => height;
-
     public float CellSize => cellSize;
-
 
     private void Awake()
     {
         GenerateMesh();
-
-        //CreateTestSlope();
-        //CreateTestFunnel();
     }
 
-
+    /// <summary>
+    /// Genera una malla centrada en el origen del objeto.
+    /// </summary>
     private void GenerateMesh()
     {
-        // Número de vértices.
-        // Necesitamos uno más que el número de casillas.
         int vertexWidth = width + 1;
         int vertexHeight = height + 1;
-
 
         vertices = new Vector3[
             vertexWidth * vertexHeight
         ];
 
+        float offsetX = (width * cellSize) / 2f;
+        float offsetZ = (height * cellSize) / 2f;
 
-        // Creamos los vértices.
+        // Generamos los vértices.
         for (int z = 0; z < vertexHeight; z++)
         {
             for (int x = 0; x < vertexWidth; x++)
             {
                 int index =
                     z * vertexWidth + x;
-
-
-                float offsetX =
-                    (width * cellSize) / 2f;
-
-                float offsetZ =
-                    (height * cellSize) / 2f;
-
 
                 vertices[index] = new Vector3(
                     x * cellSize - offsetX,
@@ -92,19 +64,16 @@ public class GridSurfaceMesh : MonoBehaviour
             }
         }
 
-
-        // Guardamos una copia de las posiciones originales.
+        // Conservamos una copia sin deformar.
         originalVertices =
             (Vector3[])vertices.Clone();
 
-
-        // Cada casilla necesita 2 triángulos.
-        triangles =
-            new int[width * height * 6];
-
+        // Cada casilla está formada por dos triángulos.
+        triangles = new int[
+            width * height * 6
+        ];
 
         int triangleIndex = 0;
-
 
         for (int z = 0; z < height; z++)
         {
@@ -122,8 +91,7 @@ public class GridSurfaceMesh : MonoBehaviour
                 int topRight =
                     topLeft + 1;
 
-
-                // Primer triángulo
+                // Primer triángulo.
                 triangles[triangleIndex++] =
                     bottomLeft;
 
@@ -133,8 +101,7 @@ public class GridSurfaceMesh : MonoBehaviour
                 triangles[triangleIndex++] =
                     topRight;
 
-
-                // Segundo triángulo
+                // Segundo triángulo.
                 triangles[triangleIndex++] =
                     bottomLeft;
 
@@ -146,66 +113,65 @@ public class GridSurfaceMesh : MonoBehaviour
             }
         }
 
+        mesh = new Mesh
+        {
+            name = "GridSurfaceMesh",
+            indexFormat = IndexFormat.UInt32
+        };
 
-        // Creamos la Mesh.
-        mesh = new Mesh();
-
-        mesh.name =
-            "GridSurfaceMesh";
-
-
-        mesh.indexFormat = IndexFormat.UInt32;
-
-        mesh.vertices =
-            vertices;
-
-        mesh.triangles =
-            triangles;
-
+        mesh.vertices = vertices;
+        mesh.triangles = triangles;
 
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
 
-
-        // La asignamos al MeshFilter.
         MeshFilter meshFilter =
             GetComponent<MeshFilter>();
 
-        meshFilter.mesh =
-            mesh;
+        meshFilter.mesh = mesh;
 
-        MeshCollider meshCollider =
-    GetComponent<MeshCollider>();
+        meshCollider =
+            GetComponent<MeshCollider>();
 
-        if (meshCollider != null)
-        {
-            meshCollider.sharedMesh = mesh;
-        }
+        meshCollider.sharedMesh = mesh;
     }
 
+    /// <summary>
+    /// Aplica las deformaciones guardadas en las secciones.
+    /// La distancia se calcula respecto al centro de la casa.
+    /// </summary>
     public void ApplySectionDeformations(
-    List<DeformationSection> sections,
-    int firstAffectedSection,
-    int lastAffectedSection)
+        List<DeformationSection> sections,
+        int firstAffectedSection,
+        int lastAffectedSection,
+        Vector2 deformationCenter)
     {
-        if (sections == null || sections.Count == 0)
+        if (sections == null ||
+            sections.Count == 0)
+        {
             return;
+        }
 
-        firstAffectedSection =
-            Mathf.Max(0, firstAffectedSection);
+        firstAffectedSection = Mathf.Clamp(
+            firstAffectedSection,
+            0,
+            sections.Count - 1
+        );
 
-        lastAffectedSection =
-            Mathf.Min(
-                sections.Count - 1,
-                lastAffectedSection
-            );
+        lastAffectedSection = Mathf.Clamp(
+            lastAffectedSection,
+            0,
+            sections.Count - 1
+        );
 
+        if (firstAffectedSection >
+            lastAffectedSection)
+        {
+            return;
+        }
 
-        // -----------------------------------------
-        // Actualizamos únicamente las secciones
-        // que han cambiado.
-        // -----------------------------------------
-
+        // Actualizamos solamente los vértices
+        // pertenecientes a las secciones modificadas.
         for (int s = firstAffectedSection;
              s <= lastAffectedSection;
              s++)
@@ -213,32 +179,35 @@ public class GridSurfaceMesh : MonoBehaviour
             DeformationSection currentSection =
                 sections[s];
 
-            int nextIndex =
-                Mathf.Min(
-                    s + 1,
-                    sections.Count - 1
-                );
+            int nextIndex = Mathf.Min(
+                s + 1,
+                sections.Count - 1
+            );
 
             DeformationSection nextSection =
                 sections[nextIndex];
 
-
             foreach (int vertexIndex
-                in currentSection.VertexIndices)
+                     in currentSection.VertexIndices)
             {
                 Vector3 originalVertex =
                     originalVertices[vertexIndex];
 
-
-                float distance =
+                Vector2 vertexPosition =
                     new Vector2(
                         originalVertex.x,
                         originalVertex.z
-                    ).magnitude;
+                    );
 
+                // Distancia respecto a la casa,
+                // no respecto al origen del grid.
+                float distance =
+                    Vector2.Distance(
+                        vertexPosition,
+                        deformationCenter
+                    );
 
                 float t = 0f;
-
 
                 if (currentSection.OuterRadius >
                     currentSection.InnerRadius)
@@ -250,7 +219,8 @@ public class GridSurfaceMesh : MonoBehaviour
                     );
                 }
 
-
+                // Interpolamos entre esta sección
+                // y la sección siguiente.
                 float deformation =
                     Mathf.Lerp(
                         currentSection.CurrentOffset,
@@ -258,81 +228,53 @@ public class GridSurfaceMesh : MonoBehaviour
                         t
                     );
 
-
-                Vector3 vertex =
+                Vector3 deformedVertex =
                     originalVertex;
 
-                vertex.y += deformation;
+                deformedVertex.y += deformation;
 
                 vertices[vertexIndex] =
-                    vertex;
+                    deformedVertex;
             }
         }
-
-
-        // -----------------------------------------
-        // Actualizamos la malla UNA SOLA VEZ
-        // -----------------------------------------
 
         mesh.vertices = vertices;
 
         RecalculateAffectedNormals(
-        sections,
-        firstAffectedSection,
-        lastAffectedSection
-    );
+            sections,
+            firstAffectedSection,
+            lastAffectedSection
+        );
 
+        mesh.RecalculateBounds();
+
+        UpdateMeshCollider();
     }
 
-    public void ApplyRadialDeformation(
-    float deformationRadius)
+    /// <summary>
+    /// Actualiza el collider para que el jugador pueda caminar
+    /// sobre la superficie deformada.
+    /// </summary>
+    private void UpdateMeshCollider()
     {
-        for (int i = 0; i < vertices.Length; i++)
+        if (meshCollider == null)
         {
-            Vector3 vertex =
-                originalVertices[i];
-
-            float distance =
-                new Vector2(
-                    vertex.x,
-                    vertex.z
-                ).magnitude;
-
-            if (distance <= deformationRadius)
-            {
-                float t =
-                    distance / deformationRadius;
-
-                float deformation =
-                    Mathf.Lerp(
-                        -0.1f,
-                        0f,
-                        t
-                    );
-
-                vertex.y += deformation;
-
-                vertices[i] =
-                    vertex;
-            }
-            else
-            {
-                vertex.y =
-                    originalVertices[i].y;
-            }
+            meshCollider =
+                GetComponent<MeshCollider>();
         }
 
-        mesh.vertices =
-            vertices;
-
-        mesh.RecalculateNormals();
-        mesh.RecalculateBounds();
+        meshCollider.sharedMesh = null;
+        meshCollider.sharedMesh = mesh;
     }
 
+    /// <summary>
+    /// Recalcula las normales de las secciones modificadas
+    /// y de sus vértices vecinos.
+    /// </summary>
     private void RecalculateAffectedNormals(
-    List<DeformationSection> sections,
-    int firstAffectedSection,
-    int lastAffectedSection)
+        List<DeformationSection> sections,
+        int firstAffectedSection,
+        int lastAffectedSection)
     {
         Vector3[] normals = mesh.normals;
 
@@ -341,36 +283,53 @@ public class GridSurfaceMesh : MonoBehaviour
         HashSet<int> affectedVertices =
             new HashSet<int>();
 
-        // Recogemos los vértices de las secciones afectadas
-        // y de las secciones vecinas.
         for (int s = firstAffectedSection;
              s <= lastAffectedSection;
              s++)
         {
-            foreach (int vertexIndex in sections[s].VertexIndices)
+            foreach (int vertexIndex
+                     in sections[s].VertexIndices)
             {
                 affectedVertices.Add(vertexIndex);
 
-                int x = vertexIndex % vertexWidth;
-                int z = vertexIndex / vertexWidth;
+                int x =
+                    vertexIndex % vertexWidth;
 
-                // Añadimos vecinos porque sus normales
-                // también pueden haber cambiado.
+                int z =
+                    vertexIndex / vertexWidth;
+
                 if (x > 0)
-                    affectedVertices.Add(vertexIndex - 1);
+                {
+                    affectedVertices.Add(
+                        vertexIndex - 1
+                    );
+                }
 
                 if (x < width)
-                    affectedVertices.Add(vertexIndex + 1);
+                {
+                    affectedVertices.Add(
+                        vertexIndex + 1
+                    );
+                }
 
                 if (z > 0)
-                    affectedVertices.Add(vertexIndex - vertexWidth);
+                {
+                    affectedVertices.Add(
+                        vertexIndex - vertexWidth
+                    );
+                }
 
                 if (z < height)
-                    affectedVertices.Add(vertexIndex + vertexWidth);
+                {
+                    affectedVertices.Add(
+                        vertexIndex + vertexWidth
+                    );
+                }
             }
         }
 
-        foreach (int vertexIndex in affectedVertices)
+        foreach (int vertexIndex
+                 in affectedVertices)
         {
             normals[vertexIndex] =
                 CalculateVertexNormal(vertexIndex);
@@ -379,17 +338,23 @@ public class GridSurfaceMesh : MonoBehaviour
         mesh.normals = normals;
     }
 
-    private Vector3 CalculateVertexNormal(int vertexIndex)
+    /// <summary>
+    /// Calcula la normal de un vértice a partir
+    /// de los triángulos que lo rodean.
+    /// </summary>
+    private Vector3 CalculateVertexNormal(
+        int vertexIndex)
     {
         Vector3 normal = Vector3.zero;
 
         int vertexWidth = width + 1;
 
-        int x = vertexIndex % vertexWidth;
-        int z = vertexIndex / vertexWidth;
+        int x =
+            vertexIndex % vertexWidth;
 
+        int z =
+            vertexIndex / vertexWidth;
 
-        // Triángulos que rodean al vértice.
         for (int dz = -1; dz <= 0; dz++)
         {
             for (int dx = -1; dx <= 0; dx++)
@@ -397,10 +362,13 @@ public class GridSurfaceMesh : MonoBehaviour
                 int cellX = x + dx;
                 int cellZ = z + dz;
 
-                if (cellX < 0 || cellX >= width ||
-                    cellZ < 0 || cellZ >= height)
+                if (cellX < 0 ||
+                    cellX >= width ||
+                    cellZ < 0 ||
+                    cellZ >= height)
+                {
                     continue;
-
+                }
 
                 int bottomLeft =
                     cellZ * vertexWidth + cellX;
@@ -414,8 +382,7 @@ public class GridSurfaceMesh : MonoBehaviour
                 int topRight =
                     topLeft + 1;
 
-
-                // Triángulo 1
+                // Primer triángulo.
                 if (vertexIndex == bottomLeft ||
                     vertexIndex == topLeft ||
                     vertexIndex == topRight)
@@ -427,8 +394,7 @@ public class GridSurfaceMesh : MonoBehaviour
                     );
                 }
 
-
-                // Triángulo 2
+                // Segundo triángulo.
                 if (vertexIndex == bottomLeft ||
                     vertexIndex == topRight ||
                     vertexIndex == bottomRight)
@@ -442,13 +408,21 @@ public class GridSurfaceMesh : MonoBehaviour
             }
         }
 
+        if (normal.sqrMagnitude < 0.000001f)
+        {
+            return Vector3.up;
+        }
+
         return normal.normalized;
     }
 
+    /// <summary>
+    /// Calcula la normal de un triángulo.
+    /// </summary>
     private Vector3 GetTriangleNormal(
-    int a,
-    int b,
-    int c)
+        int a,
+        int b,
+        int c)
     {
         Vector3 edge1 =
             vertices[b] - vertices[a];
@@ -460,97 +434,5 @@ public class GridSurfaceMesh : MonoBehaviour
             edge1,
             edge2
         ).normalized;
-    }
-    private void CreateTestSlope()
-    {
-        for (int z = 0; z <= height; z++)
-        {
-            for (int x = 0; x <= width; x++)
-            {
-                int index =
-                    z * (width + 1) + x;
-
-
-                Vector3 vertex =
-                    vertices[index];
-
-
-                if (vertex.x >= slopeStart &&
-                    vertex.x <= slopeEnd)
-                {
-                    float t =
-                        Mathf.InverseLerp(
-                            slopeStart,
-                            slopeEnd,
-                            vertex.x
-                        );
-
-
-                    vertex.y =
-                        -t * slopeDepth;
-
-
-                    vertices[index] =
-                        vertex;
-                }
-            }
-        }
-
-
-        mesh.vertices =
-            vertices;
-
-        mesh.RecalculateNormals();
-        mesh.RecalculateBounds();
-    }
-
-
-    private void CreateTestFunnel()
-    {
-        for (int z = 0; z <= height; z++)
-        {
-            for (int x = 0; x <= width; x++)
-            {
-                int index =
-                    z * (width + 1) + x;
-
-
-                Vector3 vertex =
-                    vertices[index];
-
-
-                float distance =
-                    new Vector2(
-                        vertex.x,
-                        vertex.z
-                    ).magnitude;
-
-
-                if (distance <= holeRadius)
-                {
-                    float t =
-                        distance / holeRadius;
-
-
-                    float depth =
-                        (1f - t) * holeDepth;
-
-
-                    vertex.y =
-                        -depth;
-
-
-                    vertices[index] =
-                        vertex;
-                }
-            }
-        }
-
-
-        mesh.vertices =
-            vertices;
-
-        mesh.RecalculateNormals();
-        mesh.RecalculateBounds();
     }
 }

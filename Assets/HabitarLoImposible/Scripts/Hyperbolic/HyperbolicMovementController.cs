@@ -6,10 +6,6 @@ using UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets;
 
 public class HyperbolicMovementController : MonoBehaviour
 {
-    // ======================================================
-    // SEGMENTO DE CARRETERA PRECÁLCULADO
-    // ======================================================
-
     private struct RoadSegment
     {
         public Vector2 pointA;
@@ -25,79 +21,54 @@ public class HyperbolicMovementController : MonoBehaviour
         }
     }
 
-    // ======================================================
-    // JUGADOR
-    // ======================================================
+
+    [Header("Espacio hiperbólico")]
+    [SerializeField]
+    private HyperbolicSpace hyperbolicSpace;
+
+    [Tooltip(
+        "Transform que representa el centro y " +
+        "la orientación del disco."
+    )]
+    public Transform diskCenter;
+
 
     [Header("Jugador")]
     public Transform xrOrigin;
+
     public Transform xrCamera;
+
     public DynamicMoveProvider moveProvider;
 
-    // ======================================================
-    // DISCO
-    // ======================================================
 
-    [Header("Disco de Poincaré")]
-    public Transform diskCenter;
-
-    [Tooltip(
-        "Radio físico del disco. Para un disco " +
-        "de diámetro 100 debe ser 50."
-    )]
-    [Min(0.01f)]
-    public float diskScale = 50f;
-
-    [Tooltip(
-        "Radio matemático máximo navegable."
-    )]
+    [Header("Límite de navegación")]
     [Range(0.1f, 0.999f)]
     public float maximumNavigationRadius = 0.98f;
 
-    // ======================================================
-    // VELOCIDAD
-    // ======================================================
 
     [Header("Velocidad")]
-    [Tooltip(
-        "Velocidad en el centro del disco."
-    )]
+    [Tooltip("Velocidad en el centro.")]
     [Min(0f)]
     public float baseSpeed = 3f;
 
-    [Tooltip(
-        "Velocidad mínima cerca de la frontera."
-    )]
+    [Tooltip("Velocidad mínima cerca del borde.")]
     [Min(0f)]
     public float minimumSpeed = 0.05f;
 
-    // ======================================================
-    // CARRETERAS
-    // ======================================================
 
-    [Header("Restricción a las carreteras")]
+    [Header("Restricción a carreteras")]
     [Tooltip(
-        "El jugador solo podrá moverse dentro " +
-        "de esta distancia respecto a una geodésica."
+        "Mitad de la zona navegable de la carretera " +
+        "en el centro del disco."
     )]
     [Min(0.05f)]
     public float allowedRoadHalfWidth = 1.1f;
 
-    [Tooltip(
-        "Cantidad de segmentos utilizados para " +
-        "aproximar cada geodésica."
-    )]
     [Range(4, 40)]
     public int segmentsPerGeodesic = 12;
 
-    [Tooltip(
-        "Activa o desactiva la restricción a carreteras."
-    )]
     public bool restrictMovementToRoads = true;
 
-    // ======================================================
-    // INFORMACIÓN
-    // ======================================================
 
     [Header("Información")]
     [SerializeField]
@@ -113,43 +84,42 @@ public class HyperbolicMovementController : MonoBehaviour
     private float currentDistanceToRoad;
 
     [SerializeField]
+    private float currentAllowedRoadHalfWidth;
+
+    [SerializeField]
     private int roadSegmentCount;
 
-    // ======================================================
-    // DATOS INTERNOS
-    // ======================================================
 
-    private readonly List<RoadSegment> roadSegments =
-        new List<RoadSegment>();
+    private readonly List<RoadSegment>
+        roadSegments =
+            new List<RoadSegment>();
 
     private bool roadsReady;
 
-    // ======================================================
-    // INICIO
-    // ======================================================
 
     private IEnumerator Start()
     {
         FindMissingReferences();
-        ValidateConfiguration();
 
-        // Esperamos a que se construyan
-        // las geodésicas de la teselación.
+        if (!ValidateConfiguration())
+        {
+            enabled = false;
+            yield break;
+        }
 
+        // Espera a la generación de las carreteras.
         yield return null;
 
         BuildRoadSegments();
         UpdateMovementSpeed();
     }
 
-    // ======================================================
-    // ACTUALIZACIÓN
-    // ======================================================
 
     private void Update()
     {
         UpdateMovementSpeed();
     }
+
 
     private void LateUpdate()
     {
@@ -161,14 +131,11 @@ public class HyperbolicMovementController : MonoBehaviour
         }
     }
 
-    // ======================================================
-    // VELOCIDAD HIPERBÓLICA
-    // ======================================================
 
     private void UpdateMovementSpeed()
     {
         if (moveProvider == null ||
-            diskCenter == null)
+            hyperbolicSpace == null)
         {
             return;
         }
@@ -179,24 +146,15 @@ public class HyperbolicMovementController : MonoBehaviour
         currentMathematicalRadius =
             poincarePosition.magnitude;
 
-        // Factor relativo de Poincaré:
-        //
-        // factor = 1 - r²
-
         currentPoincareFactor =
-            Mathf.Max(
-                0f,
-                1f -
-                poincarePosition.sqrMagnitude
+            hyperbolicSpace.GetScaleFactor(
+                poincarePosition
             );
 
         currentMovementSpeed =
-            baseSpeed *
-            currentPoincareFactor;
-
-        currentMovementSpeed =
             Mathf.Max(
-                currentMovementSpeed,
+                baseSpeed *
+                currentPoincareFactor,
                 minimumSpeed
             );
 
@@ -204,18 +162,16 @@ public class HyperbolicMovementController : MonoBehaviour
             currentMovementSpeed;
     }
 
-    // ======================================================
-    // POSICIÓN DEL JUGADOR
-    // ======================================================
 
     private Vector2 GetPlayerPoincarePosition()
     {
         Vector2 localPosition =
             GetPlayerLocalPlanarPosition();
 
-        return localPosition /
-               diskScale;
+        return hyperbolicSpace
+            .UnityToPoincare(localPosition);
     }
+
 
     private Vector2 GetPlayerLocalPlanarPosition()
     {
@@ -241,13 +197,15 @@ public class HyperbolicMovementController : MonoBehaviour
         );
     }
 
-    // ======================================================
-    // CONSTRUIR SEGMENTOS DE CARRETERA
-    // ======================================================
 
     [ContextMenu("Reconstruir segmentos de carreteras")]
     public void BuildRoadSegments()
     {
+        if (hyperbolicSpace == null)
+        {
+            FindMissingReferences();
+        }
+
         roadSegments.Clear();
         roadsReady = false;
 
@@ -266,8 +224,10 @@ public class HyperbolicMovementController : MonoBehaviour
             }
 
             Vector2 previousPoint =
-                geodesic.GetPointAt(0f) *
-                diskScale;
+                hyperbolicSpace
+                    .PoincareToUnity2D(
+                        geodesic.GetPointAt(0f)
+                    );
 
             for (int segment = 1;
                  segment <= segmentsPerGeodesic;
@@ -278,8 +238,10 @@ public class HyperbolicMovementController : MonoBehaviour
                     (float)segmentsPerGeodesic;
 
                 Vector2 currentPoint =
-                    geodesic.GetPointAt(t) *
-                    diskScale;
+                    hyperbolicSpace
+                        .PoincareToUnity2D(
+                            geodesic.GetPointAt(t)
+                        );
 
                 roadSegments.Add(
                     new RoadSegment(
@@ -288,8 +250,7 @@ public class HyperbolicMovementController : MonoBehaviour
                     )
                 );
 
-                previousPoint =
-                    currentPoint;
+                previousPoint = currentPoint;
             }
         }
 
@@ -299,26 +260,15 @@ public class HyperbolicMovementController : MonoBehaviour
         roadsReady =
             roadSegments.Count > 0;
 
-        if (roadsReady)
-        {
-            Debug.Log(
-                $"Carreteras preparadas para locomoción.\n" +
-                $"Geodésicas: {geodesics.Length}\n" +
-                $"Segmentos: {roadSegments.Count}"
-            );
-        }
-        else
+        if (!roadsReady)
         {
             Debug.LogError(
                 "HyperbolicMovementController: " +
-                "no se encontraron geodésicas."
+                "no se encontraron carreteras."
             );
         }
     }
 
-    // ======================================================
-    // MANTENER AL JUGADOR EN LAS CARRETERAS
-    // ======================================================
 
     private void KeepPlayerOnRoads()
     {
@@ -341,8 +291,19 @@ public class HyperbolicMovementController : MonoBehaviour
         currentDistanceToRoad =
             distanceToRoad;
 
+        Vector2 nearestRoadPoincare =
+            hyperbolicSpace.UnityToPoincare(
+                nearestRoadPoint
+            );
+
+        currentAllowedRoadHalfWidth =
+            allowedRoadHalfWidth *
+            hyperbolicSpace.GetScaleFactor(
+                nearestRoadPoincare
+            );
+
         if (distanceToRoad <=
-            allowedRoadHalfWidth)
+            currentAllowedRoadHalfWidth)
         {
             return;
         }
@@ -364,7 +325,7 @@ public class HyperbolicMovementController : MonoBehaviour
             correctedPosition =
                 nearestRoadPoint +
                 directionFromRoad.normalized *
-                allowedRoadHalfWidth;
+                currentAllowedRoadHalfWidth;
         }
 
         MoveXROriginToLocalPlanarPosition(
@@ -372,15 +333,20 @@ public class HyperbolicMovementController : MonoBehaviour
         );
     }
 
-    // ======================================================
-    // PUNTO MÁS CERCANO DE LAS CARRETERAS
-    // ======================================================
 
     private Vector2 FindNearestRoadPoint(
         Vector2 playerPosition,
         out float nearestDistance
     )
     {
+        if (roadSegments.Count == 0)
+        {
+            nearestDistance =
+                float.MaxValue;
+
+            return playerPosition;
+        }
+
         Vector2 nearestPoint =
             roadSegments[0].pointA;
 
@@ -422,6 +388,7 @@ public class HyperbolicMovementController : MonoBehaviour
         return nearestPoint;
     }
 
+
     private Vector2 ClosestPointOnSegment(
         Vector2 point,
         Vector2 segmentA,
@@ -429,8 +396,7 @@ public class HyperbolicMovementController : MonoBehaviour
     )
     {
         Vector2 segment =
-            segmentB -
-            segmentA;
+            segmentB - segmentA;
 
         float squaredLength =
             segment.sqrMagnitude;
@@ -441,29 +407,23 @@ public class HyperbolicMovementController : MonoBehaviour
             return segmentA;
         }
 
-        float t =
-            Vector2.Dot(
-                point - segmentA,
-                segment
-            ) /
-            squaredLength;
+        float t = Vector2.Dot(
+            point - segmentA,
+            segment
+        ) / squaredLength;
 
-        t =
-            Mathf.Clamp01(t);
+        t = Mathf.Clamp01(t);
 
         return segmentA +
-               segment *
-               t;
+               segment * t;
     }
 
-    // ======================================================
-    // MANTENER AL JUGADOR DENTRO DEL DISCO
-    // ======================================================
 
     private void KeepPlayerInsideDisk()
     {
         if (xrOrigin == null ||
-            diskCenter == null)
+            diskCenter == null ||
+            hyperbolicSpace == null)
         {
             return;
         }
@@ -471,29 +431,35 @@ public class HyperbolicMovementController : MonoBehaviour
         Vector2 playerPosition =
             GetPlayerLocalPlanarPosition();
 
-        float maximumPhysicalRadius =
-            maximumNavigationRadius *
-            diskScale;
+        Vector2 poincarePosition =
+            hyperbolicSpace.UnityToPoincare(
+                playerPosition
+            );
 
-        if (playerPosition.sqrMagnitude <=
-            maximumPhysicalRadius *
-            maximumPhysicalRadius)
+        Vector2 correctedPoincare =
+            hyperbolicSpace.ClampInsideDisk(
+                poincarePosition,
+                maximumNavigationRadius
+            );
+
+        if ((correctedPoincare -
+             poincarePosition).sqrMagnitude <
+            0.000001f)
         {
             return;
         }
 
-        Vector2 correctedPosition =
-            playerPosition.normalized *
-            maximumPhysicalRadius;
+        Vector2 correctedUnityPosition =
+            hyperbolicSpace
+                .PoincareToUnity2D(
+                    correctedPoincare
+                );
 
         MoveXROriginToLocalPlanarPosition(
-            correctedPosition
+            correctedUnityPosition
         );
     }
 
-    // ======================================================
-    // CORREGIR XR ORIGIN
-    // ======================================================
 
     private void MoveXROriginToLocalPlanarPosition(
         Vector2 correctedPlanarPosition
@@ -531,25 +497,29 @@ public class HyperbolicMovementController : MonoBehaviour
             correctedWorldPosition -
             playerReference.position;
 
-        // La cámara sigue dependiendo del tracking.
-        // La corrección se aplica al XR Origin.
-
-        xrOrigin.position +=
-            correction;
+        xrOrigin.position += correction;
     }
 
-    // ======================================================
-    // REFERENCIAS
-    // ======================================================
 
     private void FindMissingReferences()
     {
+        if (hyperbolicSpace == null)
+        {
+            hyperbolicSpace =
+                GetComponentInParent<HyperbolicSpace>();
+        }
+
+        if (diskCenter == null &&
+            hyperbolicSpace != null)
+        {
+            diskCenter =
+                hyperbolicSpace.transform;
+        }
+
         if (xrOrigin == null)
         {
             GameObject xrOriginObject =
-                GameObject.Find(
-                    "XR Origin"
-                );
+                GameObject.Find("XR Origin");
 
             if (xrOriginObject != null)
             {
@@ -568,18 +538,33 @@ public class HyperbolicMovementController : MonoBehaviour
         if (moveProvider == null)
         {
             moveProvider =
-                FindFirstObjectByType
-                    <DynamicMoveProvider>();
+                FindFirstObjectByType<
+                    DynamicMoveProvider
+                >();
         }
     }
 
-    private void ValidateConfiguration()
+
+    private bool ValidateConfiguration()
     {
+        bool valid = true;
+
+        if (hyperbolicSpace == null)
+        {
+            Debug.LogError(
+                "Falta asignar HyperbolicSpace."
+            );
+
+            valid = false;
+        }
+
         if (xrOrigin == null)
         {
             Debug.LogError(
                 "Falta asignar XR Origin."
             );
+
+            valid = false;
         }
 
         if (moveProvider == null)
@@ -587,6 +572,8 @@ public class HyperbolicMovementController : MonoBehaviour
             Debug.LogError(
                 "Falta asignar Dynamic Move Provider."
             );
+
+            valid = false;
         }
 
         if (diskCenter == null)
@@ -594,6 +581,10 @@ public class HyperbolicMovementController : MonoBehaviour
             Debug.LogError(
                 "Falta asignar Disk Center."
             );
+
+            valid = false;
         }
+
+        return valid;
     }
 }

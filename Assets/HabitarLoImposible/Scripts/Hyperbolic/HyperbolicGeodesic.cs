@@ -1,20 +1,24 @@
 ﻿using UnityEngine;
 
-[RequireComponent(typeof(LineRenderer))]
+/// <summary>
+/// Calcula una geodésica directamente en el disco de Poincaré.
+///
+/// Una geodésica es:
+/// - un diámetro del disco, si pasa por el origen;
+/// - un arco de circunferencia ortogonal a la frontera.
+/// </summary>
 public class HyperbolicGeodesic : MonoBehaviour
 {
-    [Header("Puntos en coordenadas del hiperboloide")]
-    public Vector2 pointA = new Vector2(-1f, 1f);
-    public Vector2 pointB = new Vector2(1f, 1f);
+    [Header("Puntos en el disco de Poincaré")]
+    [Tooltip("Debe cumplir x² + y² < 1.")]
+    [SerializeField]
+    private Vector2 pointA =
+        new Vector2(-0.35f, 0.25f);
 
-    [Header("Representación")]
-    public float diskScale = 50f;
-
-    [Header("Calidad del arco")]
-    [Range(10, 200)]
-    public int segments = 80;
-
-    private LineRenderer line;
+    [Tooltip("Debe cumplir x² + y² < 1.")]
+    [SerializeField]
+    private Vector2 pointB =
+        new Vector2(0.35f, 0.25f);
 
     private bool isDiameter;
 
@@ -23,47 +27,150 @@ public class HyperbolicGeodesic : MonoBehaviour
     private float arcAngleStart;
     private float arcAngleDelta;
 
-    private void Awake()
+
+    public Vector2 PointA
     {
-        line = GetComponent<LineRenderer>();
-        DrawGeodesic();
+        get => pointA;
+        set => pointA = value;
     }
 
-    public void DrawGeodesic()
+    public Vector2 PointB
     {
-        if (line == null)
+        get => pointB;
+        set => pointB = value;
+    }
+
+    public bool IsDiameterGeodesic =>
+        isDiameter;
+
+
+    /// <summary>
+    /// Calcula los datos necesarios para construir
+    /// la geodésica entre los dos puntos del disco.
+    /// </summary>
+    public void CalculateGeodesic()
+    {
+        if (!IsInsideDisk(pointA) ||
+            !IsInsideDisk(pointB))
         {
-            line = GetComponent<LineRenderer>();
+            Debug.LogError(
+                "HyperbolicGeodesic: los puntos deben " +
+                "estar dentro del disco de Poincaré.",
+                this
+            );
+
+            isDiameter = true;
+            ClearArcData();
+
+            return;
         }
 
-        Vector2 poincareA = GetPoincarePoint(pointA);
-        Vector2 poincareB = GetPoincarePoint(pointB);
+        if (Vector2.Distance(
+            pointA,
+            pointB
+        ) < 0.000001f)
+        {
+            Debug.LogError(
+                "HyperbolicGeodesic: los puntos de la " +
+                "geodésica no pueden ser iguales.",
+                this
+            );
 
-        isDiameter = IsDiameter(poincareA, poincareB);
+            isDiameter = true;
+            ClearArcData();
+
+            return;
+        }
+
+        isDiameter = IsDiameter(
+            pointA,
+            pointB
+        );
 
         if (isDiameter)
         {
-            DrawDiameter(poincareA, poincareB);
+            ClearArcData();
+            return;
         }
-        else
+
+        if (!TryGetSupportingCircle(
+            pointA,
+            pointB,
+            out arcCenter,
+            out arcRadius
+        ))
         {
-            DrawArc(poincareA, poincareB);
+            isDiameter = true;
+            ClearArcData();
+
+            return;
         }
+
+        float angleA = Mathf.Atan2(
+            pointA.y - arcCenter.y,
+            pointA.x - arcCenter.x
+        );
+
+        float angleB = Mathf.Atan2(
+            pointB.y - arcCenter.y,
+            pointB.x - arcCenter.x
+        );
+
+        arcAngleStart = angleA;
+
+        arcAngleDelta = Mathf.DeltaAngle(
+            angleA * Mathf.Rad2Deg,
+            angleB * Mathf.Rad2Deg
+        ) * Mathf.Deg2Rad;
     }
 
-    // ======================================================
-    // CÁLCULO GEOMÉTRICO
-    // ======================================================
 
-    public static bool IsDiameter(Vector2 pointA, Vector2 pointB)
+    /// <summary>
+    /// Comprueba si un punto pertenece al interior
+    /// del disco unidad.
+    /// </summary>
+    public static bool IsInsideDisk(
+        Vector2 point
+    )
+    {
+        return point.sqrMagnitude < 1f;
+    }
+
+
+    private void ClearArcData()
+    {
+        arcCenter = Vector2.zero;
+        arcRadius = 0f;
+        arcAngleStart = 0f;
+        arcAngleDelta = 0f;
+    }
+
+
+    /// <summary>
+    /// Comprueba si los puntos y el origen están
+    /// aproximadamente alineados.
+    ///
+    /// En ese caso, la geodésica es un diámetro.
+    /// </summary>
+    public static bool IsDiameter(
+        Vector2 pointA,
+        Vector2 pointB
+    )
     {
         float determinant =
             pointA.x * pointB.y -
             pointA.y * pointB.x;
 
-        return Mathf.Abs(determinant) < 0.0001f;
+        return Mathf.Abs(determinant) <
+               0.0001f;
     }
 
+
+    /// <summary>
+    /// Calcula la circunferencia euclidiana que pasa
+    /// por ambos puntos y es ortogonal a la frontera
+    /// del disco unidad.
+    /// </summary>
     public static bool TryGetSupportingCircle(
         Vector2 pointA,
         Vector2 pointB,
@@ -75,9 +182,11 @@ public class HyperbolicGeodesic : MonoBehaviour
             pointA.x * pointB.y -
             pointA.y * pointB.x;
 
-        float denominator = 2f * determinant;
+        float denominator =
+            2f * determinant;
 
-        if (Mathf.Abs(denominator) < 0.000001f)
+        if (Mathf.Abs(denominator) <
+            0.000001f)
         {
             center = Vector2.zero;
             radius = 0f;
@@ -86,127 +195,75 @@ public class HyperbolicGeodesic : MonoBehaviour
         }
 
         float a =
-            (pointA.sqrMagnitude + 1f) * pointB.y -
-            (pointB.sqrMagnitude + 1f) * pointA.y;
+            (pointA.sqrMagnitude + 1f) *
+            pointB.y -
+            (pointB.sqrMagnitude + 1f) *
+            pointA.y;
 
         float b =
-            (pointB.sqrMagnitude + 1f) * pointA.x -
-            (pointA.sqrMagnitude + 1f) * pointB.x;
+            (pointB.sqrMagnitude + 1f) *
+            pointA.x -
+            (pointA.sqrMagnitude + 1f) *
+            pointB.x;
 
         center = new Vector2(
             a / denominator,
             b / denominator
         );
 
-        radius = Vector2.Distance(center, pointA);
+        radius = Vector2.Distance(
+            center,
+            pointA
+        );
 
         return true;
     }
 
-    // ======================================================
-    // DIBUJO
-    // ======================================================
 
-    private void DrawDiameter(Vector2 pointA, Vector2 pointB)
+    /// <summary>
+    /// Obtiene un punto de la geodésica.
+    ///
+    /// t = 0 corresponde a pointA.
+    /// t = 1 corresponde a pointB.
+    /// </summary>
+    public Vector2 GetPointAt(float t)
     {
-        line.positionCount = 2;
+        t = Mathf.Clamp01(t);
 
-        line.SetPosition(0, ToUnityPosition(pointA));
-        line.SetPosition(1, ToUnityPosition(pointB));
-    }
-
-    private void DrawArc(Vector2 pointA, Vector2 pointB)
-    {
-        if (!TryGetSupportingCircle(
+        if (isDiameter)
+        {
+            return Vector2.Lerp(
                 pointA,
                 pointB,
-                out Vector2 center,
-                out float radius
-            ))
-        {
-            isDiameter = true;
-            DrawDiameter(pointA, pointB);
-
-            return;
-        }
-
-        arcCenter = center;
-        arcRadius = radius;
-
-        float angleA = Mathf.Atan2(
-            pointA.y - center.y,
-            pointA.x - center.x
-        );
-
-        float angleB = Mathf.Atan2(
-            pointB.y - center.y,
-            pointB.x - center.x
-        );
-
-        float deltaAngle = Mathf.DeltaAngle(
-            angleA * Mathf.Rad2Deg,
-            angleB * Mathf.Rad2Deg
-        ) * Mathf.Deg2Rad;
-
-        arcAngleStart = angleA;
-        arcAngleDelta = deltaAngle;
-
-        line.positionCount = segments + 1;
-
-        for (int i = 0; i <= segments; i++)
-        {
-            float t = i / (float)segments;
-            float angle = angleA + deltaAngle * t;
-
-            Vector2 point =
-                center +
-                new Vector2(
-                    Mathf.Cos(angle),
-                    Mathf.Sin(angle)
-                ) * radius;
-
-            line.SetPosition(
-                i,
-                ToUnityPosition(point)
+                t
             );
         }
+
+        float angle =
+            arcAngleStart +
+            arcAngleDelta * t;
+
+        return arcCenter +
+               new Vector2(
+                   Mathf.Cos(angle),
+                   Mathf.Sin(angle)
+               ) * arcRadius;
     }
 
-    // ======================================================
-    // CONVERSIONES Y CONSULTAS
-    // ======================================================
 
-    private Vector3 ToUnityPosition(Vector2 point)
-    {
-        return new Vector3(
-            point.x * diskScale,
-            0.5f,
-            point.y * diskScale
-        );
-    }
-
-    public Vector2 GetPoincarePoint(Vector2 hyperbolicPoint)
-    {
-        HyperbolicPoint point =
-            new HyperbolicPoint(
-                hyperbolicPoint.x,
-                hyperbolicPoint.y
-            );
-
-        return point.ToPoincareDisk();
-    }
-
+    /// <summary>
+    /// Obtiene la dirección tangente a la geodésica.
+    /// </summary>
     public Vector2 GetTangentAt(float t)
     {
         t = Mathf.Clamp01(t);
 
         if (isDiameter)
         {
-            Vector2 direction =
-                GetPoincarePoint(pointB) -
-                GetPoincarePoint(pointA);
-
-            return direction.normalized;
+            return (
+                pointB -
+                pointA
+            ).normalized;
         }
 
         float angle =
@@ -226,44 +283,17 @@ public class HyperbolicGeodesic : MonoBehaviour
             );
 
         Vector2 directionAB =
-            GetPoincarePoint(pointB) -
-            GetPoincarePoint(pointA);
+            pointB -
+            pointA;
 
-        if (Vector2.Dot(tangent, directionAB) < 0f)
+        if (Vector2.Dot(
+            tangent,
+            directionAB
+        ) < 0f)
         {
             tangent = -tangent;
         }
 
         return tangent.normalized;
-    }
-
-    public Vector2 GetPointAt(float t)
-    {
-        t = Mathf.Clamp01(t);
-
-        if (isDiameter)
-        {
-            Vector2 poincareA =
-                GetPoincarePoint(pointA);
-
-            Vector2 poincareB =
-                GetPoincarePoint(pointB);
-
-            return Vector2.Lerp(
-                poincareA,
-                poincareB,
-                t
-            );
-        }
-
-        float angle =
-            arcAngleStart +
-            arcAngleDelta * t;
-
-        return arcCenter +
-               new Vector2(
-                   Mathf.Cos(angle),
-                   Mathf.Sin(angle)
-               ) * arcRadius;
     }
 }

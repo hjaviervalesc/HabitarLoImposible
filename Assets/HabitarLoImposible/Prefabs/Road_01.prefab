@@ -12,6 +12,8 @@ GameObject:
   - component: {fileID: 5630042087467004272}
   - component: {fileID: 5315597353569363310}
   - component: {fileID: 9045794280647348360}
+  - component: {fileID: 5876002352767847627}
+  - component: {fileID: 7612227475043100156}
   m_Layer: 0
   m_Name: Road_01
   m_TagString: Untagged
@@ -67,7 +69,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 7b7c743bb755008418049586c50d5c9f, type: 2}
+  - {fileID: 2100000, guid: 1b32f449ff16f8345804bb4a1779b91b, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -103,7 +105,43 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 07fd22c507f6ef94c8dcd5569a59cfdc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HyperbolicRoad
-  geodesic: {fileID: 0}
-  roadWidth: 1
-  roadHeight: 0.5
+  roadWidth: 2
+  roadHeight: 0.05
+  useHyperbolicScale: 1
   segments: 80
+--- !u!114 &5876002352767847627
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3206611146663413632}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 29d26863e4480cf40ae86046cd60c0f7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HyperbolicGeodesic
+  pointA: {x: -1, y: 1}
+  pointB: {x: 1, y: 1}
+--- !u!64 &7612227475043100156
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3206611146663413632}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 5
+  m_Convex: 1
+  m_CookingOptions: 30
+  m_Mesh: {fileID: 0}
