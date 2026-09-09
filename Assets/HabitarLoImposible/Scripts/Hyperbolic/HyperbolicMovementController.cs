@@ -13,14 +13,12 @@ public class HyperbolicMovementController : MonoBehaviour
 
         public RoadSegment(
             Vector2 pointA,
-            Vector2 pointB
-        )
+            Vector2 pointB)
         {
             this.pointA = pointA;
             this.pointB = pointB;
         }
     }
-
 
     [Header("Espacio hiperbólico")]
     [SerializeField]
@@ -32,7 +30,6 @@ public class HyperbolicMovementController : MonoBehaviour
     )]
     public Transform diskCenter;
 
-
     [Header("Jugador")]
     public Transform xrOrigin;
 
@@ -40,11 +37,17 @@ public class HyperbolicMovementController : MonoBehaviour
 
     public DynamicMoveProvider moveProvider;
 
+    [Header("Activación")]
+    [Tooltip(
+        "Se activa automáticamente al entrar " +
+        "en la zona del disco."
+    )]
+    [SerializeField]
+    private bool hyperbolicMovementActive;
 
     [Header("Límite de navegación")]
     [Range(0.1f, 0.999f)]
     public float maximumNavigationRadius = 0.98f;
-
 
     [Header("Velocidad")]
     [Tooltip("Velocidad en el centro.")]
@@ -54,7 +57,6 @@ public class HyperbolicMovementController : MonoBehaviour
     [Tooltip("Velocidad mínima cerca del borde.")]
     [Min(0f)]
     public float minimumSpeed = 0.05f;
-
 
     [Header("Restricción a carreteras")]
     [Tooltip(
@@ -68,7 +70,6 @@ public class HyperbolicMovementController : MonoBehaviour
     public int segmentsPerGeodesic = 12;
 
     public bool restrictMovementToRoads = true;
-
 
     [Header("Información")]
     [SerializeField]
@@ -89,13 +90,11 @@ public class HyperbolicMovementController : MonoBehaviour
     [SerializeField]
     private int roadSegmentCount;
 
-
-    private readonly List<RoadSegment>
-        roadSegments =
-            new List<RoadSegment>();
+    private readonly List<RoadSegment> roadSegments =
+        new List<RoadSegment>();
 
     private bool roadsReady;
-
+    private float normalMovementSpeed;
 
     private IEnumerator Start()
     {
@@ -107,22 +106,50 @@ public class HyperbolicMovementController : MonoBehaviour
             yield break;
         }
 
+        /*
+         * Guardamos la velocidad normal que se utiliza
+         * fuera del disco de Poincaré.
+         */
+        normalMovementSpeed =
+            moveProvider.moveSpeed;
+
+        /*
+         * El movimiento hiperbólico comienza desactivado.
+         */
+        hyperbolicMovementActive =
+            false;
+
         // Espera a la generación de las carreteras.
         yield return null;
 
         BuildRoadSegments();
-        UpdateMovementSpeed();
     }
-
 
     private void Update()
     {
+        /*
+         * En el tablero y en las escaleras
+         * no hacemos absolutamente nada.
+         */
+        if (!hyperbolicMovementActive)
+        {
+            return;
+        }
+
         UpdateMovementSpeed();
     }
 
-
     private void LateUpdate()
     {
+        /*
+         * El límite del disco y la restricción a las
+         * carreteras solo funcionan dentro del disco.
+         */
+        if (!hyperbolicMovementActive)
+        {
+            return;
+        }
+
         KeepPlayerInsideDisk();
 
         if (restrictMovementToRoads)
@@ -131,6 +158,95 @@ public class HyperbolicMovementController : MonoBehaviour
         }
     }
 
+    // =========================================================
+    // ACTIVACIÓN Y DESACTIVACIÓN
+    // =========================================================
+
+    public void SetHyperbolicMovementActive(
+        bool active)
+    {
+        if (hyperbolicMovementActive ==
+            active)
+        {
+            return;
+        }
+
+        if (active)
+        {
+            /*
+             * Guardamos la velocidad que tenía el jugador
+             * justo antes de entrar en el disco.
+             */
+            normalMovementSpeed =
+                moveProvider.moveSpeed;
+
+            hyperbolicMovementActive =
+                true;
+
+            if (!roadsReady)
+            {
+                BuildRoadSegments();
+            }
+
+            UpdateMovementSpeed();
+
+            Debug.Log(
+                "Movimiento hiperbólico activado.",
+                this
+            );
+        }
+        else
+        {
+            hyperbolicMovementActive =
+                false;
+
+            /*
+             * Recuperamos la velocidad normal al abandonar
+             * el disco.
+             */
+            moveProvider.moveSpeed =
+                normalMovementSpeed;
+
+            currentMathematicalRadius = 0f;
+            currentPoincareFactor = 0f;
+            currentMovementSpeed =
+                normalMovementSpeed;
+
+            currentDistanceToRoad = 0f;
+            currentAllowedRoadHalfWidth = 0f;
+
+            Debug.Log(
+                "Movimiento hiperbólico desactivado.",
+                this
+            );
+        }
+    }
+
+    [ContextMenu("Activar movimiento hiperbólico")]
+    public void ActivateHyperbolicMovement()
+    {
+        SetHyperbolicMovementActive(true);
+    }
+
+    [ContextMenu("Desactivar movimiento hiperbólico")]
+    public void DeactivateHyperbolicMovement()
+    {
+        SetHyperbolicMovementActive(false);
+    }
+
+    private void OnDisable()
+    {
+        if (moveProvider != null &&
+            hyperbolicMovementActive)
+        {
+            moveProvider.moveSpeed =
+                normalMovementSpeed;
+        }
+    }
+
+    // =========================================================
+    // VELOCIDAD HIPERBÓLICA
+    // =========================================================
 
     private void UpdateMovementSpeed()
     {
@@ -162,7 +278,6 @@ public class HyperbolicMovementController : MonoBehaviour
             currentMovementSpeed;
     }
 
-
     private Vector2 GetPlayerPoincarePosition()
     {
         Vector2 localPosition =
@@ -171,7 +286,6 @@ public class HyperbolicMovementController : MonoBehaviour
         return hyperbolicSpace
             .UnityToPoincare(localPosition);
     }
-
 
     private Vector2 GetPlayerLocalPlanarPosition()
     {
@@ -197,6 +311,9 @@ public class HyperbolicMovementController : MonoBehaviour
         );
     }
 
+    // =========================================================
+    // CONSTRUCCIÓN DE LAS CARRETERAS
+    // =========================================================
 
     [ContextMenu("Reconstruir segmentos de carreteras")]
     public void BuildRoadSegments()
@@ -208,6 +325,11 @@ public class HyperbolicMovementController : MonoBehaviour
 
         roadSegments.Clear();
         roadsReady = false;
+
+        if (hyperbolicSpace == null)
+        {
+            return;
+        }
 
         HyperbolicGeodesic[] geodesics =
             FindObjectsByType<HyperbolicGeodesic>(
@@ -250,7 +372,8 @@ public class HyperbolicMovementController : MonoBehaviour
                     )
                 );
 
-                previousPoint = currentPoint;
+                previousPoint =
+                    currentPoint;
             }
         }
 
@@ -264,17 +387,22 @@ public class HyperbolicMovementController : MonoBehaviour
         {
             Debug.LogError(
                 "HyperbolicMovementController: " +
-                "no se encontraron carreteras."
+                "no se encontraron carreteras.",
+                this
             );
         }
     }
 
+    // =========================================================
+    // RESTRICCIÓN A LAS CARRETERAS
+    // =========================================================
 
     private void KeepPlayerOnRoads()
     {
         if (!roadsReady ||
             xrOrigin == null ||
-            diskCenter == null)
+            diskCenter == null ||
+            hyperbolicSpace == null)
         {
             return;
         }
@@ -333,11 +461,9 @@ public class HyperbolicMovementController : MonoBehaviour
         );
     }
 
-
     private Vector2 FindNearestRoadPoint(
         Vector2 playerPosition,
-        out float nearestDistance
-    )
+        out float nearestDistance)
     {
         if (roadSegments.Count == 0)
         {
@@ -388,15 +514,14 @@ public class HyperbolicMovementController : MonoBehaviour
         return nearestPoint;
     }
 
-
     private Vector2 ClosestPointOnSegment(
         Vector2 point,
         Vector2 segmentA,
-        Vector2 segmentB
-    )
+        Vector2 segmentB)
     {
         Vector2 segment =
-            segmentB - segmentA;
+            segmentB -
+            segmentA;
 
         float squaredLength =
             segment.sqrMagnitude;
@@ -407,10 +532,12 @@ public class HyperbolicMovementController : MonoBehaviour
             return segmentA;
         }
 
-        float t = Vector2.Dot(
-            point - segmentA,
-            segment
-        ) / squaredLength;
+        float t =
+            Vector2.Dot(
+                point - segmentA,
+                segment
+            ) /
+            squaredLength;
 
         t = Mathf.Clamp01(t);
 
@@ -418,6 +545,9 @@ public class HyperbolicMovementController : MonoBehaviour
                segment * t;
     }
 
+    // =========================================================
+    // LÍMITE DEL DISCO
+    // =========================================================
 
     private void KeepPlayerInsideDisk()
     {
@@ -460,10 +590,12 @@ public class HyperbolicMovementController : MonoBehaviour
         );
     }
 
+    // =========================================================
+    // CORRECCIÓN DEL XR ORIGIN
+    // =========================================================
 
     private void MoveXROriginToLocalPlanarPosition(
-        Vector2 correctedPlanarPosition
-    )
+        Vector2 correctedPlanarPosition)
     {
         if (xrOrigin == null ||
             diskCenter == null)
@@ -500,6 +632,9 @@ public class HyperbolicMovementController : MonoBehaviour
         xrOrigin.position += correction;
     }
 
+    // =========================================================
+    // REFERENCIAS
+    // =========================================================
 
     private void FindMissingReferences()
     {
@@ -544,7 +679,6 @@ public class HyperbolicMovementController : MonoBehaviour
         }
     }
 
-
     private bool ValidateConfiguration()
     {
         bool valid = true;
@@ -552,7 +686,8 @@ public class HyperbolicMovementController : MonoBehaviour
         if (hyperbolicSpace == null)
         {
             Debug.LogError(
-                "Falta asignar HyperbolicSpace."
+                "Falta asignar HyperbolicSpace.",
+                this
             );
 
             valid = false;
@@ -561,7 +696,8 @@ public class HyperbolicMovementController : MonoBehaviour
         if (xrOrigin == null)
         {
             Debug.LogError(
-                "Falta asignar XR Origin."
+                "Falta asignar XR Origin.",
+                this
             );
 
             valid = false;
@@ -570,7 +706,8 @@ public class HyperbolicMovementController : MonoBehaviour
         if (moveProvider == null)
         {
             Debug.LogError(
-                "Falta asignar Dynamic Move Provider."
+                "Falta asignar Dynamic Move Provider.",
+                this
             );
 
             valid = false;
@@ -579,7 +716,8 @@ public class HyperbolicMovementController : MonoBehaviour
         if (diskCenter == null)
         {
             Debug.LogError(
-                "Falta asignar Disk Center."
+                "Falta asignar Disk Center.",
+                this
             );
 
             valid = false;

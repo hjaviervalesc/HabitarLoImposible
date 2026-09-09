@@ -28,6 +28,29 @@ public class GestaltPawnPath : MonoBehaviour
     [SerializeField]
     private float finalWidth = 2f;
 
+    [Header("Curvatura")]
+    [Tooltip(
+        "Desplazamiento lateral máximo del paseo. " +
+        "Usa 0 para obtener un camino recto."
+    )]
+    [SerializeField]
+    private float curveAmount = 1.5f;
+
+    [Tooltip(
+        "Cantidad de cambios de dirección de la curva. " +
+        "Valores entre 1 y 2 suelen producir un resultado suave."
+    )]
+    [Min(0.1f)]
+    [SerializeField]
+    private float curveWaves = 1.5f;
+
+    [Tooltip(
+        "Permite desplazar los puntos en los que aparecen " +
+        "las curvas sin mover los extremos del recorrido."
+    )]
+    [SerializeField]
+    private float curvePhase = 0f;
+
     [Header("Escala")]
     [SerializeField]
     private float initialScale = 1f;
@@ -69,8 +92,7 @@ public class GestaltPawnPath : MonoBehaviour
             Vector3 originalWorldPosition)
         {
             PawnTransform = pawnTransform;
-            OriginalWorldPosition =
-                originalWorldPosition;
+            OriginalWorldPosition = originalWorldPosition;
         }
     }
 
@@ -110,21 +132,15 @@ public class GestaltPawnPath : MonoBehaviour
             return;
         }
 
-        ClearPath();
+        Vector3 start = pathStart.position;
+        Vector3 end = houseEntrance.position;
 
-        Vector3 start =
-            pathStart.position;
-
-        Vector3 end =
-            houseEntrance.position;
-
-        Vector3 pathDirection =
-            end - start;
+        Vector3 straightDirection = end - start;
 
         // El paseo se distribuye sobre el plano XZ.
-        pathDirection.y = 0f;
+        straightDirection.y = 0f;
 
-        if (pathDirection.sqrMagnitude < 0.001f)
+        if (straightDirection.sqrMagnitude < 0.001f)
         {
             Debug.LogWarning(
                 "El inicio y el final del paseo coinciden.",
@@ -134,22 +150,27 @@ public class GestaltPawnPath : MonoBehaviour
             return;
         }
 
-        pathDirection.Normalize();
+        ClearPath();
 
-        Vector3 lateralDirection =
+        straightDirection.Normalize();
+
+        Vector3 baseLateralDirection =
             new Vector3(
-                -pathDirection.z,
+                -straightDirection.z,
                 0f,
-                pathDirection.x
+                straightDirection.x
             );
 
-        for (int i = 0;
-             i < pawnPairs;
-             i++)
+        for (int i = 0; i < pawnPairs; i++)
         {
             float normalizedIndex =
                 (float)i / (pawnPairs - 1);
 
+            /*
+             * Modifica la separación entre parejas.
+             * Con valores mayores que 1, los peones se
+             * concentran progresivamente cerca de la casa.
+             */
             float pathProgress =
                 1f - Mathf.Pow(
                     1f - normalizedIndex,
@@ -157,18 +178,32 @@ public class GestaltPawnPath : MonoBehaviour
                 );
 
             Vector3 pathPosition =
-                Vector3.Lerp(
+                GetCurvedPathPosition(
                     start,
                     end,
+                    baseLateralDirection,
                     pathProgress
                 );
 
             /*
-             * Todos comienzan sobre la altura inicial
-             * del tablero. La deformación se añade después.
+             * Calculamos la dirección local de la curva.
+             * Así cada pareja sigue visualmente el recorrido
+             * en lugar de mirar siempre en línea recta.
              */
-            pathPosition.y =
-                start.y + verticalOffset;
+            Vector3 localPathDirection =
+                GetCurvedPathDirection(
+                    start,
+                    end,
+                    baseLateralDirection,
+                    pathProgress
+                );
+
+            Vector3 localLateralDirection =
+                new Vector3(
+                    -localPathDirection.z,
+                    0f,
+                    localPathDirection.x
+                ).normalized;
 
             float currentWidth =
                 Mathf.Lerp(
@@ -186,30 +221,133 @@ public class GestaltPawnPath : MonoBehaviour
 
             Vector3 leftPosition =
                 pathPosition -
-                lateralDirection *
+                localLateralDirection *
                 currentWidth *
                 0.5f;
 
             Vector3 rightPosition =
                 pathPosition +
-                lateralDirection *
+                localLateralDirection *
                 currentWidth *
                 0.5f;
 
             CreatePawn(
                 leftPosition,
                 currentScale,
-                pathDirection
+                localPathDirection
             );
 
             CreatePawn(
                 rightPosition,
                 currentScale,
-                pathDirection
+                localPathDirection
             );
         }
 
         UpdatePawnPositions();
+    }
+
+    /// <summary>
+    /// Obtiene una posición sobre el recorrido curvado.
+    /// La envolvente hace que la curvatura sea cero
+    /// tanto al principio como al final.
+    /// </summary>
+    private Vector3 GetCurvedPathPosition(
+        Vector3 start,
+        Vector3 end,
+        Vector3 lateralDirection,
+        float progress)
+    {
+        progress = Mathf.Clamp01(progress);
+
+        Vector3 position =
+            Vector3.Lerp(start, end, progress);
+
+        /*
+         * La envolvente vale 0 en ambos extremos y 1
+         * aproximadamente en el centro del recorrido.
+         */
+        float curveEnvelope =
+            Mathf.Sin(progress * Mathf.PI);
+
+        float curveOscillation =
+            Mathf.Sin(
+                progress *
+                Mathf.PI *
+                2f *
+                curveWaves +
+                curvePhase
+            );
+
+        float lateralOffset =
+            curveAmount *
+            curveEnvelope *
+            curveOscillation;
+
+        position +=
+            lateralDirection *
+            lateralOffset;
+
+        /*
+         * Los peones parten de la altura inicial.
+         * La deformación del tablero se añade después.
+         */
+        position.y =
+            start.y + verticalOffset;
+
+        return position;
+    }
+
+    /// <summary>
+    /// Calcula la dirección local de la curva comparando
+    /// dos posiciones muy próximas del recorrido.
+    /// </summary>
+    private Vector3 GetCurvedPathDirection(
+        Vector3 start,
+        Vector3 end,
+        Vector3 lateralDirection,
+        float progress)
+    {
+        const float sampleDistance = 0.01f;
+
+        float previousProgress =
+            Mathf.Clamp01(
+                progress - sampleDistance
+            );
+
+        float nextProgress =
+            Mathf.Clamp01(
+                progress + sampleDistance
+            );
+
+        Vector3 previousPosition =
+            GetCurvedPathPosition(
+                start,
+                end,
+                lateralDirection,
+                previousProgress
+            );
+
+        Vector3 nextPosition =
+            GetCurvedPathPosition(
+                start,
+                end,
+                lateralDirection,
+                nextProgress
+            );
+
+        Vector3 direction =
+            nextPosition - previousPosition;
+
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude < 0.001f)
+        {
+            direction = end - start;
+            direction.y = 0f;
+        }
+
+        return direction.normalized;
     }
 
     private void CreatePawn(
@@ -221,7 +359,10 @@ public class GestaltPawnPath : MonoBehaviour
             Instantiate(
                 pawnPrefab,
                 position,
-                Quaternion.LookRotation(direction),
+                Quaternion.LookRotation(
+                    direction,
+                    Vector3.up
+                ),
                 transform
             );
 

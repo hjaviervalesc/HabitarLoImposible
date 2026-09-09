@@ -4,17 +4,47 @@ using UnityEngine;
 public class LocalCollisionMesh : MonoBehaviour
 {
     [Header("Grid visual")]
-    [SerializeField] private GridSurfaceMesh gridSurfaceMesh;
+    [SerializeField]
+    private GridSurfaceMesh gridSurfaceMesh;
 
     [Header("Jugador")]
-    [SerializeField] private Transform xrOrigin;
+    [SerializeField]
+    private Transform xrOrigin;
 
     [Header("Tamaño del collider")]
-    [SerializeField] private int radius = 10;
+    [Min(1)]
+    [SerializeField]
+    private int radius = 10;
 
     [Header("Resolución")]
-    [SerializeField] private float cellSize = 1f;
+    [Min(0.1f)]
+    [SerializeField]
+    private float cellSize = 1f;
 
+    [Header("Detección de superficie")]
+    [Tooltip(
+        "Altura desde la que se comprueba qué superficie " +
+        "está sosteniendo al jugador."
+    )]
+    [Min(0f)]
+    [SerializeField]
+    private float raycastStartOffset = 0.3f;
+
+    [Tooltip(
+        "Distancia utilizada para buscar una superficie " +
+        "debajo del jugador."
+    )]
+    [Min(0.1f)]
+    [SerializeField]
+    private float surfaceCheckDistance = 2f;
+
+    [Tooltip(
+        "Distancia máxima respecto a la superficie del grid " +
+        "para volver a activar su collider local."
+    )]
+    [Min(0.1f)]
+    [SerializeField]
+    private float maximumGridDistance = 1f;
 
     private Mesh collisionMesh;
     private MeshCollider meshCollider;
@@ -22,36 +52,72 @@ public class LocalCollisionMesh : MonoBehaviour
     private Vector3[] vertices;
     private int[] triangles;
 
-    private Vector2Int previousPlayerCell =
-        new Vector2Int(int.MinValue, int.MinValue);
+    private bool gridCollisionActive = true;
 
+    private Vector2Int previousPlayerCell =
+        new Vector2Int(
+            int.MinValue,
+            int.MinValue
+        );
+
+    private void Awake()
+    {
+        meshCollider =
+            GetComponent<MeshCollider>();
+    }
 
     private void Start()
     {
-        meshCollider = GetComponent<MeshCollider>();
+        if (gridSurfaceMesh == null ||
+            xrOrigin == null)
+        {
+            Debug.LogWarning(
+                "Faltan referencias en LocalCollisionMesh.",
+                this
+            );
+
+            enabled = false;
+            return;
+        }
 
         GenerateCollisionMesh();
-
         UpdateCollision();
+        UpdateColliderState();
     }
-
 
     private void Update()
     {
-        if (xrOrigin == null)
+        if (xrOrigin == null ||
+            gridSurfaceMesh == null)
+        {
             return;
+        }
+
+        UpdateColliderState();
+
+        /*
+         * Si otra estructura sostiene al jugador,
+         * no actualizamos el collider del grid.
+         */
+        if (!gridCollisionActive)
+        {
+            return;
+        }
 
         Vector2Int currentCell =
             GetPlayerCell();
 
-        if (currentCell == previousPlayerCell)
+        if (currentCell ==
+            previousPlayerCell)
+        {
             return;
+        }
 
-        previousPlayerCell = currentCell;
+        previousPlayerCell =
+            currentCell;
 
         UpdateCollision();
     }
-
 
     // =========================================================
     // GENERACIÓN DE LA MALLA
@@ -64,45 +130,50 @@ public class LocalCollisionMesh : MonoBehaviour
         int vertexWidth = size + 1;
         int vertexHeight = size + 1;
 
+        vertices =
+            new Vector3[
+                vertexWidth *
+                vertexHeight
+            ];
 
-        // -----------------------------------------------------
-        // VÉRTICES
-        // -----------------------------------------------------
-
-        vertices = new Vector3[
-            vertexWidth * vertexHeight
-        ];
-
-
-        for (int z = 0; z < vertexHeight; z++)
+        for (int z = 0;
+             z < vertexHeight;
+             z++)
         {
-            for (int x = 0; x < vertexWidth; x++)
+            for (int x = 0;
+                 x < vertexWidth;
+                 x++)
             {
                 int index =
                     z * vertexWidth + x;
 
-                vertices[index] = new Vector3(
-                    (x - radius) * cellSize,
-                    0f,
-                    (z - radius) * cellSize
-                );
+                vertices[index] =
+                    new Vector3(
+                        (x - radius) *
+                        cellSize,
+                        0f,
+                        (z - radius) *
+                        cellSize
+                    );
             }
         }
 
-
-        // -----------------------------------------------------
-        // TRIÁNGULOS
-        // -----------------------------------------------------
-
         triangles =
-            new int[size * size * 6];
+            new int[
+                size *
+                size *
+                6
+            ];
 
         int triangleIndex = 0;
 
-
-        for (int z = 0; z < size; z++)
+        for (int z = 0;
+             z < size;
+             z++)
         {
-            for (int x = 0; x < size; x++)
+            for (int x = 0;
+                 x < size;
+                 x++)
             {
                 int bottomLeft =
                     z * vertexWidth + x;
@@ -111,13 +182,12 @@ public class LocalCollisionMesh : MonoBehaviour
                     bottomLeft + 1;
 
                 int topLeft =
-                    (z + 1) * vertexWidth + x;
+                    (z + 1) *
+                    vertexWidth + x;
 
                 int topRight =
                     topLeft + 1;
 
-
-                // Primer triángulo
                 triangles[triangleIndex++] =
                     bottomLeft;
 
@@ -127,8 +197,6 @@ public class LocalCollisionMesh : MonoBehaviour
                 triangles[triangleIndex++] =
                     topRight;
 
-
-                // Segundo triángulo
                 triangles[triangleIndex++] =
                     bottomLeft;
 
@@ -140,16 +208,13 @@ public class LocalCollisionMesh : MonoBehaviour
             }
         }
 
-
-        // -----------------------------------------------------
-        // MESH
-        // -----------------------------------------------------
-
         collisionMesh =
-            new Mesh();
+            new Mesh
+            {
+                name = "LocalCollisionMesh"
+            };
 
-        collisionMesh.name =
-            "LocalCollisionMesh";
+        collisionMesh.MarkDynamic();
 
         collisionMesh.vertices =
             vertices;
@@ -164,46 +229,228 @@ public class LocalCollisionMesh : MonoBehaviour
             collisionMesh;
     }
 
+    // =========================================================
+    // ACTIVACIÓN DEL COLLIDER
+    // =========================================================
+
+    private void UpdateColliderState()
+    {
+        /*
+         * Fuera de los límites XZ del grid, el collider
+         * local siempre debe permanecer desactivado.
+         */
+        if (!IsPlayerInsideGrid())
+        {
+            SetGridCollisionActive(false);
+            return;
+        }
+
+        /*
+         * Si está desactivado, comprobamos primero si el
+         * jugador está suficientemente cerca del grid
+         * como para poder regresar a él.
+         */
+        if (!gridCollisionActive)
+        {
+            if (!IsPlayerNearGridSurface())
+            {
+                return;
+            }
+
+            /*
+             * Lo activamos temporalmente para poder incluirlo
+             * en la comprobación de superficies.
+             */
+            meshCollider.enabled = true;
+
+            UpdateCollision();
+
+            Physics.SyncTransforms();
+        }
+
+        Collider supportingCollider =
+            GetSupportingCollider();
+
+        bool supportedByGrid =
+            supportingCollider ==
+            meshCollider;
+
+        SetGridCollisionActive(
+            supportedByGrid
+        );
+    }
+
+    private Collider GetSupportingCollider()
+    {
+        Vector3 upDirection =
+            xrOrigin.up.normalized;
+
+        Vector3 rayOrigin =
+            xrOrigin.position +
+            upDirection *
+            raycastStartOffset;
+
+        RaycastHit[] hits =
+            Physics.RaycastAll(
+                rayOrigin,
+                -upDirection,
+                surfaceCheckDistance +
+                raycastStartOffset,
+                ~0,
+                QueryTriggerInteraction.Ignore
+            );
+
+        Collider closestCollider = null;
+        float closestDistance =
+            float.MaxValue;
+
+        for (int i = 0;
+             i < hits.Length;
+             i++)
+        {
+            Collider hitCollider =
+                hits[i].collider;
+
+            if (hitCollider == null)
+            {
+                continue;
+            }
+
+            /*
+             * Ignoramos cualquier collider perteneciente
+             * al propio XR Origin.
+             */
+            if (hitCollider.transform ==
+                    xrOrigin ||
+                hitCollider.transform.IsChildOf(
+                    xrOrigin
+                ))
+            {
+                continue;
+            }
+
+            if (hits[i].distance <
+                closestDistance)
+            {
+                closestDistance =
+                    hits[i].distance;
+
+                closestCollider =
+                    hitCollider;
+            }
+        }
+
+        return closestCollider;
+    }
+
+    private void SetGridCollisionActive(
+        bool shouldBeActive)
+    {
+        if (gridCollisionActive ==
+                shouldBeActive &&
+            meshCollider.enabled ==
+                shouldBeActive)
+        {
+            return;
+        }
+
+        gridCollisionActive =
+            shouldBeActive;
+
+        meshCollider.enabled =
+            shouldBeActive;
+
+        if (shouldBeActive)
+        {
+            previousPlayerCell =
+                new Vector2Int(
+                    int.MinValue,
+                    int.MinValue
+                );
+        }
+    }
 
     // =========================================================
-    // ACTUALIZACIÓN
+    // COMPROBACIÓN DE LOS LÍMITES DEL GRID
+    // =========================================================
+
+    private bool IsPlayerInsideGrid()
+    {
+        Vector3 localPosition =
+            gridSurfaceMesh.transform
+                .InverseTransformPoint(
+                    xrOrigin.position
+                );
+
+        float halfWidth =
+            gridSurfaceMesh.Width *
+            gridSurfaceMesh.CellSize *
+            0.5f;
+
+        float halfDepth =
+            gridSurfaceMesh.Height *
+            gridSurfaceMesh.CellSize *
+            0.5f;
+
+        return
+            localPosition.x >= -halfWidth &&
+            localPosition.x <= halfWidth &&
+            localPosition.z >= -halfDepth &&
+            localPosition.z <= halfDepth;
+    }
+
+    private bool IsPlayerNearGridSurface()
+    {
+        Vector3 playerPosition =
+            xrOrigin.position;
+
+        float gridWorldHeight =
+            GetGridHeight(playerPosition);
+
+        float distance =
+            Mathf.Abs(
+                playerPosition.y -
+                gridWorldHeight
+            );
+
+        return distance <=
+            maximumGridDistance;
+    }
+
+    // =========================================================
+    // ACTUALIZACIÓN DE LA MALLA LOCAL
     // =========================================================
 
     private void UpdateCollision()
     {
-        if (gridSurfaceMesh == null)
+        if (gridSurfaceMesh == null ||
+            xrOrigin == null ||
+            collisionMesh == null)
+        {
             return;
-
-        if (xrOrigin == null)
-            return;
-
-
-        // -----------------------------------------------------
-        // Colocamos el collider alrededor del jugador
-        // -----------------------------------------------------
+        }
 
         Vector3 playerPosition =
             xrOrigin.position;
 
+        /*
+         * El collider local se mantiene centrado
+         * horizontalmente alrededor del jugador.
+         */
         transform.position =
             new Vector3(
                 playerPosition.x,
-                0f,
+                gridSurfaceMesh.transform.position.y,
                 playerPosition.z
             );
 
-
-        // -----------------------------------------------------
-        // Actualizamos la altura de cada vértice
-        // -----------------------------------------------------
-
-        for (int i = 0; i < vertices.Length; i++)
+        for (int i = 0;
+             i < vertices.Length;
+             i++)
         {
             Vector3 localVertex =
                 vertices[i];
 
-
-            // Posición del vértice en el mundo
             Vector3 worldPosition =
                 transform.TransformPoint(
                     new Vector3(
@@ -213,14 +460,11 @@ public class LocalCollisionMesh : MonoBehaviour
                     )
                 );
 
-
-            // Altura de la malla visual
             float worldHeight =
-                GetGridHeight(worldPosition);
+                GetGridHeight(
+                    worldPosition
+                );
 
-
-            // Convertimos la posición mundial
-            // a coordenadas locales del collider
             Vector3 collisionPosition =
                 transform.InverseTransformPoint(
                     new Vector3(
@@ -230,15 +474,9 @@ public class LocalCollisionMesh : MonoBehaviour
                     )
                 );
 
-
             vertices[i].y =
                 collisionPosition.y;
         }
-
-
-        // -----------------------------------------------------
-        // Aplicamos los vértices
-        // -----------------------------------------------------
 
         collisionMesh.vertices =
             vertices;
@@ -246,45 +484,38 @@ public class LocalCollisionMesh : MonoBehaviour
         collisionMesh.RecalculateNormals();
         collisionMesh.RecalculateBounds();
 
-
-        // -----------------------------------------------------
-        // Actualizamos el MeshCollider
-        // -----------------------------------------------------
-
         meshCollider.sharedMesh = null;
-        meshCollider.sharedMesh = collisionMesh;
+        meshCollider.sharedMesh =
+            collisionMesh;
     }
 
-
     // =========================================================
-    // ALTURA DE LA MALLA VISUAL
+    // ALTURA DEL GRID
     // =========================================================
 
-    private float GetGridHeight(Vector3 worldPosition)
+    private float GetGridHeight(
+        Vector3 worldPosition)
     {
         Vector3 localPosition =
-            gridSurfaceMesh.transform.InverseTransformPoint(
-                worldPosition
-            );
-
+            gridSurfaceMesh.transform
+                .InverseTransformPoint(
+                    worldPosition
+                );
 
         float gridWidth =
             gridSurfaceMesh.Width *
             gridSurfaceMesh.CellSize;
 
-        float gridHeight =
+        float gridDepth =
             gridSurfaceMesh.Height *
             gridSurfaceMesh.CellSize;
 
-
         float offsetX =
-            gridWidth / 2f;
+            gridWidth * 0.5f;
 
         float offsetZ =
-            gridHeight / 2f;
+            gridDepth * 0.5f;
 
-
-        // Coordenadas dentro del grid
         float gridX =
             (localPosition.x + offsetX) /
             gridSurfaceMesh.CellSize;
@@ -292,11 +523,6 @@ public class LocalCollisionMesh : MonoBehaviour
         float gridZ =
             (localPosition.z + offsetZ) /
             gridSurfaceMesh.CellSize;
-
-
-        // -----------------------------------------------------
-        // Comprobamos que estamos dentro del grid
-        // -----------------------------------------------------
 
         if (gridX < 0f ||
             gridX > gridSurfaceMesh.Width ||
@@ -313,16 +539,19 @@ public class LocalCollisionMesh : MonoBehaviour
                 ).y;
         }
 
-
-        // -----------------------------------------------------
-        // Vértices que rodean la posición
-        // -----------------------------------------------------
-
         int x0 =
-            Mathf.FloorToInt(gridX);
+            Mathf.Clamp(
+                Mathf.FloorToInt(gridX),
+                0,
+                gridSurfaceMesh.Width
+            );
 
         int z0 =
-            Mathf.FloorToInt(gridZ);
+            Mathf.Clamp(
+                Mathf.FloorToInt(gridZ),
+                0,
+                gridSurfaceMesh.Height
+            );
 
         int x1 =
             Mathf.Min(
@@ -336,17 +565,14 @@ public class LocalCollisionMesh : MonoBehaviour
                 gridSurfaceMesh.Height
             );
 
-
         float tx =
             gridX - x0;
 
         float tz =
             gridZ - z0;
 
-
         int vertexWidth =
             gridSurfaceMesh.Width + 1;
-
 
         int index00 =
             z0 * vertexWidth + x0;
@@ -360,14 +586,8 @@ public class LocalCollisionMesh : MonoBehaviour
         int index11 =
             z1 * vertexWidth + x1;
 
-
         Vector3[] gridVertices =
             gridSurfaceMesh.Vertices;
-
-
-        // -----------------------------------------------------
-        // Interpolación bilineal de la altura
-        // -----------------------------------------------------
 
         float height00 =
             gridVertices[index00].y;
@@ -380,7 +600,6 @@ public class LocalCollisionMesh : MonoBehaviour
 
         float height11 =
             gridVertices[index11].y;
-
 
         float heightBottom =
             Mathf.Lerp(
@@ -403,9 +622,6 @@ public class LocalCollisionMesh : MonoBehaviour
                 tz
             );
 
-
-        // Convertimos la altura local de GridSurfaceMesh
-        // a altura mundial
         Vector3 localPoint =
             new Vector3(
                 localPosition.x,
@@ -413,15 +629,9 @@ public class LocalCollisionMesh : MonoBehaviour
                 localPosition.z
             );
 
-        Vector3 worldPoint =
-            gridSurfaceMesh.transform.TransformPoint(
-                localPoint
-            );
-
-
-        return worldPoint.y;
+        return gridSurfaceMesh.transform
+            .TransformPoint(localPoint).y;
     }
-
 
     // =========================================================
     // POSICIÓN DEL JUGADOR
@@ -430,19 +640,20 @@ public class LocalCollisionMesh : MonoBehaviour
     private Vector2Int GetPlayerCell()
     {
         Vector3 localPosition =
-            gridSurfaceMesh.transform.InverseTransformPoint(
-                xrOrigin.position
-            );
-
+            gridSurfaceMesh.transform
+                .InverseTransformPoint(
+                    xrOrigin.position
+                );
 
         float offsetX =
-            (gridSurfaceMesh.Width *
-            gridSurfaceMesh.CellSize) / 2f;
+            gridSurfaceMesh.Width *
+            gridSurfaceMesh.CellSize *
+            0.5f;
 
         float offsetZ =
-            (gridSurfaceMesh.Height *
-            gridSurfaceMesh.CellSize) / 2f;
-
+            gridSurfaceMesh.Height *
+            gridSurfaceMesh.CellSize *
+            0.5f;
 
         int x =
             Mathf.FloorToInt(
@@ -456,10 +667,8 @@ public class LocalCollisionMesh : MonoBehaviour
                 gridSurfaceMesh.CellSize
             );
 
-
         return new Vector2Int(x, z);
     }
-
 
     // =========================================================
     // ACTUALIZACIÓN EXTERNA
@@ -467,6 +676,17 @@ public class LocalCollisionMesh : MonoBehaviour
 
     public void RefreshCollision()
     {
-        UpdateCollision();
+        if (gridCollisionActive)
+        {
+            UpdateCollision();
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (collisionMesh != null)
+        {
+            Destroy(collisionMesh);
+        }
     }
 }

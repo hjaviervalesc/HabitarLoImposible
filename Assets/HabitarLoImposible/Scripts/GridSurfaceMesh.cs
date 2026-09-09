@@ -4,7 +4,6 @@ using UnityEngine.Rendering;
 
 [RequireComponent(typeof(MeshFilter))]
 [RequireComponent(typeof(MeshRenderer))]
-[RequireComponent(typeof(MeshCollider))]
 public class GridSurfaceMesh : MonoBehaviour
 {
     [Header("Grid")]
@@ -20,8 +19,6 @@ public class GridSurfaceMesh : MonoBehaviour
     private Vector3[] originalVertices;
     private int[] triangles;
 
-    private MeshCollider meshCollider;
-
     public Mesh Mesh => mesh;
     public Vector3[] Vertices => vertices;
     public int Width => width;
@@ -35,6 +32,7 @@ public class GridSurfaceMesh : MonoBehaviour
 
     /// <summary>
     /// Genera una malla centrada en el origen del objeto.
+    /// Esta malla es exclusivamente visual.
     /// </summary>
     private void GenerateMesh()
     {
@@ -64,7 +62,8 @@ public class GridSurfaceMesh : MonoBehaviour
             }
         }
 
-        // Conservamos una copia sin deformar.
+        // Conservamos una copia de los vértices
+        // antes de aplicar deformaciones.
         originalVertices =
             (Vector3[])vertices.Clone();
 
@@ -119,6 +118,10 @@ public class GridSurfaceMesh : MonoBehaviour
             indexFormat = IndexFormat.UInt32
         };
 
+        // Indica a Unity que la malla se modificará
+        // frecuentemente durante la ejecución.
+        mesh.MarkDynamic();
+
         mesh.vertices = vertices;
         mesh.triangles = triangles;
 
@@ -128,12 +131,7 @@ public class GridSurfaceMesh : MonoBehaviour
         MeshFilter meshFilter =
             GetComponent<MeshFilter>();
 
-        meshFilter.mesh = mesh;
-
-        meshCollider =
-            GetComponent<MeshCollider>();
-
-        meshCollider.sharedMesh = mesh;
+        meshFilter.sharedMesh = mesh;
     }
 
     /// <summary>
@@ -170,7 +168,7 @@ public class GridSurfaceMesh : MonoBehaviour
             return;
         }
 
-        // Actualizamos solamente los vértices
+        // Actualizamos únicamente los vértices
         // pertenecientes a las secciones modificadas.
         for (int s = firstAffectedSection;
              s <= lastAffectedSection;
@@ -220,7 +218,7 @@ public class GridSurfaceMesh : MonoBehaviour
                 }
 
                 // Interpolamos entre esta sección
-                // y la sección siguiente.
+                // y la siguiente.
                 float deformation =
                     Mathf.Lerp(
                         currentSection.CurrentOffset,
@@ -247,24 +245,6 @@ public class GridSurfaceMesh : MonoBehaviour
         );
 
         mesh.RecalculateBounds();
-
-        UpdateMeshCollider();
-    }
-
-    /// <summary>
-    /// Actualiza el collider para que el jugador pueda caminar
-    /// sobre la superficie deformada.
-    /// </summary>
-    private void UpdateMeshCollider()
-    {
-        if (meshCollider == null)
-        {
-            meshCollider =
-                GetComponent<MeshCollider>();
-        }
-
-        meshCollider.sharedMesh = null;
-        meshCollider.sharedMesh = mesh;
     }
 
     /// <summary>
@@ -339,8 +319,8 @@ public class GridSurfaceMesh : MonoBehaviour
     }
 
     /// <summary>
-    /// Calcula la normal de un vértice a partir
-    /// de los triángulos que lo rodean.
+    /// Calcula la normal de un vértice utilizando
+    /// los triángulos que lo rodean.
     /// </summary>
     private Vector3 CalculateVertexNormal(
         int vertexIndex)
@@ -434,5 +414,13 @@ public class GridSurfaceMesh : MonoBehaviour
             edge1,
             edge2
         ).normalized;
+    }
+
+    private void OnDestroy()
+    {
+        if (mesh != null)
+        {
+            Destroy(mesh);
+        }
     }
 }
