@@ -1,14 +1,9 @@
 using UnityEngine;
 
 /// <summary>
-/// Genera una carretera por cada arista
-/// calculada por HyperbolicTessellation.
-///
-/// Las aristas ya están expresadas directamente
-/// en coordenadas del disco de Poincaré.
+/// Genera una carretera por cada arista de HyperbolicTessellation utilizando sus coordenadas en el disco de Poincaré.
 /// </summary>
-public class HyperbolicTessellationVisualizer :
-    MonoBehaviour
+public class HyperbolicTessellationVisualizer : MonoBehaviour
 {
     [Header("Espacio hiperbólico")]
     [SerializeField]
@@ -25,7 +20,9 @@ public class HyperbolicTessellationVisualizer :
 
     private Transform generatedRoot;
 
-
+    /// <summary>
+    /// Construye la visualización al iniciar si la opción buildOnStart está activada.
+    /// </summary>
     private void Start()
     {
         if (buildOnStart)
@@ -35,54 +32,28 @@ public class HyperbolicTessellationVisualizer :
     }
 
 
-    [ContextMenu("Reconstruir visualización")]
-    public void RebuildView()
-    {
-        FindReferences();
-
-        if (tessellation != null)
-        {
-            tessellation.GenerateTessellation();
-        }
-
-        BuildView();
-    }
-
-
+    /// <summary>
+    /// Valida las referencias, genera los datos si no hay aristas y sustituye la visualización por una carretera para cada arista.
+    /// </summary>
     public void BuildView()
     {
         FindReferences();
 
         if (hyperbolicSpace == null)
         {
-            Debug.LogError(
-                "HyperbolicTessellationVisualizer: " +
-                "falta HyperbolicSpace.",
-                this
-            );
-
+            Debug.LogError("HyperbolicTessellationVisualizer: " + "falta HyperbolicSpace.", this);
             return;
         }
 
         if (tessellation == null)
         {
-            Debug.LogError(
-                "HyperbolicTessellationVisualizer: " +
-                "falta HyperbolicTessellation.",
-                this
-            );
-
+            Debug.LogError("HyperbolicTessellationVisualizer: " + "falta HyperbolicTessellation.", this);
             return;
         }
 
         if (roadPrefab == null)
         {
-            Debug.LogError(
-                "HyperbolicTessellationVisualizer: " +
-                "falta Road Prefab.",
-                this
-            );
-
+            Debug.LogError("HyperbolicTessellationVisualizer: " + "falta Road Prefab.", this);
             return;
         }
 
@@ -96,110 +67,78 @@ public class HyperbolicTessellationVisualizer :
 
         int edgeIndex = 0;
 
-        foreach (HyperbolicEdge edge
-                 in tessellation.Edges)
+        foreach (HyperbolicEdge edge in tessellation.Edges)
         {
             edgeIndex++;
 
-            CreateRoad(
-                edge,
-                edgeIndex
-            );
+            CreateRoad(edge, edgeIndex);
         }
     }
 
-
+    /// <summary>
+    /// Busca las referencias no asignadas al espacio hiperbólico y a la teselación en el objeto o en su jerarquía de padres.
+    /// </summary>
     private void FindReferences()
     {
         if (hyperbolicSpace == null)
         {
-            hyperbolicSpace =
-                GetComponentInParent<HyperbolicSpace>();
+            hyperbolicSpace = GetComponentInParent<HyperbolicSpace>();
         }
 
         if (tessellation == null)
         {
-            tessellation =
-                GetComponent<HyperbolicTessellation>();
+            tessellation = GetComponent<HyperbolicTessellation>();
 
             if (tessellation == null)
             {
-                tessellation =
-                    GetComponentInParent<
-                        HyperbolicTessellation
-                    >();
+                tessellation = GetComponentInParent<HyperbolicTessellation>();
             }
         }
     }
 
-
-    private void CreateRoad(
-        HyperbolicEdge edge,
-        int edgeIndex
-    )
+    /// <summary>
+    /// Instancia una carretera, asigna su nombre, restablece su transformación local y la inicializa con los extremos de la arista.
+    /// </summary>
+    private void CreateRoad(HyperbolicEdge edge, int edgeIndex)
     {
-        HyperbolicRoad road =
-            Instantiate(
-                roadPrefab,
-                generatedRoot
-            );
+        HyperbolicRoad road = Instantiate(roadPrefab, generatedRoot);
 
-        road.name =
-            $"Road_{edgeIndex:000}";
+        road.name = $"Road_{edgeIndex:000}";
 
-        ResetLocalTransform(
-            road.transform
-        );
+        ResetLocalTransform(road.transform);
 
-        // Los puntos de la arista ya pertenecen
-        // al disco de Poincaré.
-        road.Initialize(
-            edge.pointA,
-            edge.pointB,
-            hyperbolicSpace
-        );
+        road.Initialize(edge.pointA, edge.pointB, hyperbolicSpace);
     }
 
-
+    /// <summary>
+    /// Crea el objeto padre que agrupa las carreteras generadas y lo vincula al objeto de este componente.
+    /// </summary>
     private void CreateGeneratedRoot()
     {
-        GameObject rootObject =
-            new GameObject(
-                "GeneratedTessellationRoads"
-            );
+        GameObject rootObject = new GameObject("GeneratedTessellationRoads");
 
-        generatedRoot =
-            rootObject.transform;
+        generatedRoot = rootObject.transform;
 
-        generatedRoot.SetParent(
-            transform,
-            false
-        );
+        generatedRoot.SetParent(transform, false);
     }
 
-
-    private void ResetLocalTransform(
-        Transform target
-    )
+    /// <summary>
+    /// Restablece la posición local a cero, la rotación local a la identidad y la escala local a uno.
+    /// </summary>
+    private void ResetLocalTransform(Transform target)
     {
-        target.localPosition =
-            Vector3.zero;
-
-        target.localRotation =
-            Quaternion.identity;
-
-        target.localScale =
-            Vector3.one;
+        target.localPosition = Vector3.zero;
+        target.localRotation = Quaternion.identity;
+        target.localScale = Vector3.one;
     }
 
-
+    /// <summary>
+    /// Elimina el objeto que contiene las carreteras mediante destrucción diferida en ejecución o inmediata fuera del modo Play.
+    /// </summary>
     [ContextMenu("Eliminar visualización")]
     public void ClearView()
     {
-        Transform existingRoot =
-            transform.Find(
-                "GeneratedTessellationRoads"
-            );
+        Transform existingRoot = transform.Find("GeneratedTessellationRoads");
 
         if (existingRoot == null)
         {
@@ -209,15 +148,11 @@ public class HyperbolicTessellationVisualizer :
 
         if (Application.isPlaying)
         {
-            Destroy(
-                existingRoot.gameObject
-            );
+            Destroy(existingRoot.gameObject);
         }
         else
         {
-            DestroyImmediate(
-                existingRoot.gameObject
-            );
+            DestroyImmediate(existingRoot.gameObject);
         }
 
         generatedRoot = null;

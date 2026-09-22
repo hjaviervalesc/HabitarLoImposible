@@ -1,24 +1,18 @@
 ﻿using UnityEngine;
 
 /// <summary>
-/// Calcula una geodésica directamente en el disco de Poincaré.
-///
-/// Una geodésica es:
-/// - un diámetro del disco, si pasa por el origen;
-/// - un arco de circunferencia ortogonal a la frontera.
+/// Calcula una geodésica en el disco de Poincaré como un diámetro o un arco de circunferencia ortogonal a su frontera.
 /// </summary>
 public class HyperbolicGeodesic : MonoBehaviour
 {
     [Header("Puntos en el disco de Poincaré")]
     [Tooltip("Debe cumplir x² + y² < 1.")]
     [SerializeField]
-    private Vector2 pointA =
-        new Vector2(-0.35f, 0.25f);
+    private Vector2 pointA = new Vector2(-0.35f, 0.25f);
 
     [Tooltip("Debe cumplir x² + y² < 1.")]
     [SerializeField]
-    private Vector2 pointB =
-        new Vector2(0.35f, 0.25f);
+    private Vector2 pointB = new Vector2(0.35f, 0.25f);
 
     private bool isDiameter;
 
@@ -26,7 +20,6 @@ public class HyperbolicGeodesic : MonoBehaviour
     private float arcRadius;
     private float arcAngleStart;
     private float arcAngleDelta;
-
 
     public Vector2 PointA
     {
@@ -40,24 +33,16 @@ public class HyperbolicGeodesic : MonoBehaviour
         set => pointB = value;
     }
 
-    public bool IsDiameterGeodesic =>
-        isDiameter;
-
+    public bool IsDiameterGeodesic => isDiameter;
 
     /// <summary>
-    /// Calcula los datos necesarios para construir
-    /// la geodésica entre los dos puntos del disco.
+    /// Valida los puntos y calcula los datos del diámetro o del arco que representa la geodésica entre ambos.
     /// </summary>
     public void CalculateGeodesic()
     {
-        if (!IsInsideDisk(pointA) ||
-            !IsInsideDisk(pointB))
+        if (!IsInsideDisk(pointA) || !IsInsideDisk(pointB))
         {
-            Debug.LogError(
-                "HyperbolicGeodesic: los puntos deben " +
-                "estar dentro del disco de Poincaré.",
-                this
-            );
+            Debug.LogError("HyperbolicGeodesic: los puntos deben " + "estar dentro del disco de Poincaré.", this);
 
             isDiameter = true;
             ClearArcData();
@@ -65,16 +50,9 @@ public class HyperbolicGeodesic : MonoBehaviour
             return;
         }
 
-        if (Vector2.Distance(
-            pointA,
-            pointB
-        ) < 0.000001f)
+        if (Vector2.Distance(pointA, pointB) < 0.000001f)
         {
-            Debug.LogError(
-                "HyperbolicGeodesic: los puntos de la " +
-                "geodésica no pueden ser iguales.",
-                this
-            );
+            Debug.LogError("HyperbolicGeodesic: los puntos de la " + "geodésica no pueden ser iguales.", this);
 
             isDiameter = true;
             ClearArcData();
@@ -82,10 +60,7 @@ public class HyperbolicGeodesic : MonoBehaviour
             return;
         }
 
-        isDiameter = IsDiameter(
-            pointA,
-            pointB
-        );
+        isDiameter = IsDiameter(pointA, pointB);
 
         if (isDiameter)
         {
@@ -93,12 +68,7 @@ public class HyperbolicGeodesic : MonoBehaviour
             return;
         }
 
-        if (!TryGetSupportingCircle(
-            pointA,
-            pointB,
-            out arcCenter,
-            out arcRadius
-        ))
+        if (!TryGetSupportingCircle(pointA, pointB, out arcCenter, out arcRadius))
         {
             isDiameter = true;
             ClearArcData();
@@ -106,37 +76,24 @@ public class HyperbolicGeodesic : MonoBehaviour
             return;
         }
 
-        float angleA = Mathf.Atan2(
-            pointA.y - arcCenter.y,
-            pointA.x - arcCenter.x
-        );
-
-        float angleB = Mathf.Atan2(
-            pointB.y - arcCenter.y,
-            pointB.x - arcCenter.x
-        );
+        float angleA = Mathf.Atan2(pointA.y - arcCenter.y, pointA.x - arcCenter.x);
+        float angleB = Mathf.Atan2(pointB.y - arcCenter.y, pointB.x - arcCenter.x);
 
         arcAngleStart = angleA;
-
-        arcAngleDelta = Mathf.DeltaAngle(
-            angleA * Mathf.Rad2Deg,
-            angleB * Mathf.Rad2Deg
-        ) * Mathf.Deg2Rad;
+        arcAngleDelta = Mathf.DeltaAngle(angleA * Mathf.Rad2Deg, angleB * Mathf.Rad2Deg) * Mathf.Deg2Rad;
     }
 
-
     /// <summary>
-    /// Comprueba si un punto pertenece al interior
-    /// del disco unidad.
+    /// Comprueba si un punto pertenece al interior del disco unidad.
     /// </summary>
-    public static bool IsInsideDisk(
-        Vector2 point
-    )
+    public static bool IsInsideDisk(Vector2 point)
     {
         return point.sqrMagnitude < 1f;
     }
 
-
+    /// <summary>
+    /// Restablece a cero el centro, el radio y los ángulos del arco.
+    /// </summary>
     private void ClearArcData()
     {
         arcCenter = Vector2.zero;
@@ -145,48 +102,25 @@ public class HyperbolicGeodesic : MonoBehaviour
         arcAngleDelta = 0f;
     }
 
-
     /// <summary>
-    /// Comprueba si los puntos y el origen están
-    /// aproximadamente alineados.
-    ///
-    /// En ese caso, la geodésica es un diámetro.
+    /// Comprueba si los puntos y el origen están aproximadamente alineados, en cuyo caso la geodésica se representa como un diámetro.
     /// </summary>
-    public static bool IsDiameter(
-        Vector2 pointA,
-        Vector2 pointB
-    )
+    public static bool IsDiameter(Vector2 pointA, Vector2 pointB)
     {
-        float determinant =
-            pointA.x * pointB.y -
-            pointA.y * pointB.x;
+        float determinant = pointA.x * pointB.y - pointA.y * pointB.x;
 
-        return Mathf.Abs(determinant) <
-               0.0001f;
+        return Mathf.Abs(determinant) < 0.0001f;
     }
 
-
     /// <summary>
-    /// Calcula la circunferencia euclidiana que pasa
-    /// por ambos puntos y es ortogonal a la frontera
-    /// del disco unidad.
+    /// Calcula el centro y el radio de la circunferencia que pasa por ambos puntos y es ortogonal a la frontera del disco unidad.
     /// </summary>
-    public static bool TryGetSupportingCircle(
-        Vector2 pointA,
-        Vector2 pointB,
-        out Vector2 center,
-        out float radius
-    )
+    public static bool TryGetSupportingCircle(Vector2 pointA, Vector2 pointB, out Vector2 center, out float radius)
     {
-        float determinant =
-            pointA.x * pointB.y -
-            pointA.y * pointB.x;
+        float determinant = pointA.x * pointB.y - pointA.y * pointB.x;
+        float denominator = 2f * determinant;
 
-        float denominator =
-            2f * determinant;
-
-        if (Mathf.Abs(denominator) <
-            0.000001f)
+        if (Mathf.Abs(denominator) < 0.000001f)
         {
             center = Vector2.zero;
             radius = 0f;
@@ -194,37 +128,17 @@ public class HyperbolicGeodesic : MonoBehaviour
             return false;
         }
 
-        float a =
-            (pointA.sqrMagnitude + 1f) *
-            pointB.y -
-            (pointB.sqrMagnitude + 1f) *
-            pointA.y;
+        float a = (pointA.sqrMagnitude + 1f) * pointB.y - (pointB.sqrMagnitude + 1f) * pointA.y;
+        float b = (pointB.sqrMagnitude + 1f) * pointA.x - (pointA.sqrMagnitude + 1f) * pointB.x;
 
-        float b =
-            (pointB.sqrMagnitude + 1f) *
-            pointA.x -
-            (pointA.sqrMagnitude + 1f) *
-            pointB.x;
-
-        center = new Vector2(
-            a / denominator,
-            b / denominator
-        );
-
-        radius = Vector2.Distance(
-            center,
-            pointA
-        );
+        center = new Vector2(a / denominator, b / denominator);
+        radius = Vector2.Distance(center, pointA);
 
         return true;
     }
 
-
     /// <summary>
-    /// Obtiene un punto de la geodésica.
-    ///
-    /// t = 0 corresponde a pointA.
-    /// t = 1 corresponde a pointB.
+    /// Obtiene un punto de la geodésica para un parámetro limitado entre cero y uno, correspondientes a pointA y pointB.
     /// </summary>
     public Vector2 GetPointAt(float t)
     {
@@ -232,27 +146,16 @@ public class HyperbolicGeodesic : MonoBehaviour
 
         if (isDiameter)
         {
-            return Vector2.Lerp(
-                pointA,
-                pointB,
-                t
-            );
+            return Vector2.Lerp(pointA, pointB, t);
         }
 
-        float angle =
-            arcAngleStart +
-            arcAngleDelta * t;
+        float angle = arcAngleStart + arcAngleDelta * t;
 
-        return arcCenter +
-               new Vector2(
-                   Mathf.Cos(angle),
-                   Mathf.Sin(angle)
-               ) * arcRadius;
+        return arcCenter + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * arcRadius;
     }
 
-
     /// <summary>
-    /// Obtiene la dirección tangente a la geodésica.
+    /// Obtiene la dirección tangente normalizada a la geodésica en el punto indicado, orientada de pointA hacia pointB.
     /// </summary>
     public Vector2 GetTangentAt(float t)
     {
@@ -260,36 +163,16 @@ public class HyperbolicGeodesic : MonoBehaviour
 
         if (isDiameter)
         {
-            return (
-                pointB -
-                pointA
-            ).normalized;
+            return (pointB - pointA).normalized;
         }
 
-        float angle =
-            arcAngleStart +
-            arcAngleDelta * t;
+        float angle = arcAngleStart + arcAngleDelta * t;
 
-        Vector2 radiusDirection =
-            new Vector2(
-                Mathf.Cos(angle),
-                Mathf.Sin(angle)
-            );
+        Vector2 radiusDirection = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+        Vector2 tangent = new Vector2(-radiusDirection.y, radiusDirection.x);
+        Vector2 directionAB = pointB - pointA;
 
-        Vector2 tangent =
-            new Vector2(
-                -radiusDirection.y,
-                radiusDirection.x
-            );
-
-        Vector2 directionAB =
-            pointB -
-            pointA;
-
-        if (Vector2.Dot(
-            tangent,
-            directionAB
-        ) < 0f)
+        if (Vector2.Dot(tangent, directionAB) < 0f)
         {
             tangent = -tangent;
         }

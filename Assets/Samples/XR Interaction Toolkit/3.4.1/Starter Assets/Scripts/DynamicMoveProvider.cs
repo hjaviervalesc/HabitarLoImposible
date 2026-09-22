@@ -5,38 +5,27 @@ using UnityEngine.XR.Interaction.Toolkit.Locomotion.Movement;
 namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
 {
     /// <summary>
-    /// A version of continuous movement that automatically controls the frame of reference that
-    /// determines the forward direction of movement based on user preference for each hand.
-    /// For example, can configure to use head relative movement for the left hand and controller relative movement for the right hand.
+    /// Permite elegir movimiento relativo a la cabeza o a los mandos.
+    /// Calcula el desplazamiento utilizando la vertical actual
+    /// del XR Origin, incluso cuando está inclinado o boca abajo.
     /// </summary>
     public class DynamicMoveProvider : ContinuousMoveProvider
     {
-        /// <summary>
-        /// Defines which transform the XR Origin's movement direction is relative to.
-        /// </summary>
-        /// <seealso cref="leftHandMovementDirection"/>
-        /// <seealso cref="rightHandMovementDirection"/>
         public enum MovementDirection
         {
-            /// <summary>
-            /// Use the forward direction of the head (camera) as the forward direction of the XR Origin's movement.
-            /// </summary>
             HeadRelative,
-
-            /// <summary>
-            /// Use the forward direction of the hand (controller) as the forward direction of the XR Origin's movement.
-            /// </summary>
             HandRelative,
         }
 
-        [Space, Header("Movement Direction")]
+        [Space]
+        [Header("Movement Direction")]
         [SerializeField]
-        [Tooltip("Directs the XR Origin's movement when using the head-relative mode. If not set, will automatically find and use the XR Origin Camera.")]
-        Transform m_HeadTransform;
+        [Tooltip(
+            "Referencia de la cabeza para el movimiento. " +
+            "Si no se asigna, se utiliza la cámara del XR Origin."
+        )]
+        private Transform m_HeadTransform;
 
-        /// <summary>
-        /// Directs the XR Origin's movement when using the head-relative mode. If not set, will automatically find and use the XR Origin Camera.
-        /// </summary>
         public Transform headTransform
         {
             get => m_HeadTransform;
@@ -44,12 +33,12 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
         }
 
         [SerializeField]
-        [Tooltip("Directs the XR Origin's movement when using the hand-relative mode with the left hand.")]
-        Transform m_LeftControllerTransform;
+        [Tooltip(
+            "Referencia del mando izquierdo para el movimiento " +
+            "relativo a ese mando."
+        )]
+        private Transform m_LeftControllerTransform;
 
-        /// <summary>
-        /// Directs the XR Origin's movement when using the hand-relative mode with the left hand.
-        /// </summary>
         public Transform leftControllerTransform
         {
             get => m_LeftControllerTransform;
@@ -57,8 +46,11 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
         }
 
         [SerializeField]
-        [Tooltip("Directs the XR Origin's movement when using the hand-relative mode with the right hand.")]
-        Transform m_RightControllerTransform;
+        [Tooltip(
+            "Referencia del mando derecho para el movimiento " +
+            "relativo a ese mando."
+        )]
+        private Transform m_RightControllerTransform;
 
         public Transform rightControllerTransform
         {
@@ -67,13 +59,12 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
         }
 
         [SerializeField]
-        [Tooltip("Whether to use the specified head transform or left controller transform to direct the XR Origin's movement for the left hand.")]
-        MovementDirection m_LeftHandMovementDirection;
+        [Tooltip(
+            "Referencia utilizada para orientar el movimiento " +
+            "del joystick izquierdo."
+        )]
+        private MovementDirection m_LeftHandMovementDirection;
 
-        /// <summary>
-        /// Whether to use the specified head transform or controller transform to direct the XR Origin's movement for the left hand.
-        /// </summary>
-        /// <seealso cref="MovementDirection"/>
         public MovementDirection leftHandMovementDirection
         {
             get => m_LeftHandMovementDirection;
@@ -81,29 +72,33 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
         }
 
         [SerializeField]
-        [Tooltip("Whether to use the specified head transform or right controller transform to direct the XR Origin's movement for the right hand.")]
-        MovementDirection m_RightHandMovementDirection;
+        [Tooltip(
+            "Referencia utilizada para orientar el movimiento " +
+            "del joystick derecho."
+        )]
+        private MovementDirection m_RightHandMovementDirection;
 
-        /// <summary>
-        /// Whether to use the specified head transform or controller transform to direct the XR Origin's movement for the right hand.
-        /// </summary>
-        /// <seealso cref="MovementDirection"/>
         public MovementDirection rightHandMovementDirection
         {
             get => m_RightHandMovementDirection;
             set => m_RightHandMovementDirection = value;
         }
 
-        Transform m_CombinedTransform;
-        Pose m_LeftMovementPose = Pose.identity;
-        Pose m_RightMovementPose = Pose.identity;
+        private Transform m_CombinedTransform;
 
-        /// <inheritdoc />
+        private Pose m_LeftMovementPose = Pose.identity;
+        private Pose m_RightMovementPose = Pose.identity;
+
+        private Vector3 m_CorrectedInAirVelocity;
+
         protected override void Awake()
         {
             base.Awake();
 
-            m_CombinedTransform = new GameObject("[Dynamic Move Provider] Combined Forward Source").transform;
+            m_CombinedTransform = new GameObject(
+                "[Dynamic Move Provider] Combined Forward Source"
+            ).transform;
+
             m_CombinedTransform.SetParent(transform, false);
             m_CombinedTransform.localPosition = Vector3.zero;
             m_CombinedTransform.localRotation = Quaternion.identity;
@@ -111,80 +106,262 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             forwardSource = m_CombinedTransform;
         }
 
-        /// <inheritdoc />
+        protected override void OnEnable()
+        {
+            base.OnEnable();
+
+            m_CorrectedInAirVelocity = Vector3.zero;
+        }
+
         protected override Vector3 ComputeDesiredMove(Vector2 input)
         {
-            // Don't need to do anything if the total input is zero.
-            // This is the same check as the base method.
-            if (input == Vector2.zero)
-                return base.ComputeDesiredMove(input);
+            if (mediator == null || mediator.xrOrigin == null)
+            {
+                return Vector3.zero;
+            }
 
-            // Initialize the Head Transform if necessary, getting the Camera from XR Origin
+            if (input == Vector2.zero)
+            {
+                return ComputeCorrectedMove(input);
+            }
+
+            // Obtiene la cámara si no se ha asignado la cabeza.
             if (m_HeadTransform == null)
             {
-                var xrOrigin = mediator.xrOrigin;
-                if (xrOrigin != null)
+                var xrCamera = mediator.xrOrigin.Camera;
+
+                if (xrCamera != null)
                 {
-                    var xrCamera = xrOrigin.Camera;
-                    if (xrCamera != null)
-                        m_HeadTransform = xrCamera.transform;
+                    m_HeadTransform = xrCamera.transform;
                 }
             }
 
-            // Get the forward source for the left hand input
+            // Referencia para el joystick izquierdo.
             switch (m_LeftHandMovementDirection)
             {
                 case MovementDirection.HeadRelative:
                     if (m_HeadTransform != null)
-                        m_LeftMovementPose = m_HeadTransform.GetWorldPose();
+                    {
+                        m_LeftMovementPose =
+                            m_HeadTransform.GetWorldPose();
+                    }
 
                     break;
 
                 case MovementDirection.HandRelative:
                     if (m_LeftControllerTransform != null)
-                        m_LeftMovementPose = m_LeftControllerTransform.GetWorldPose();
+                    {
+                        m_LeftMovementPose =
+                            m_LeftControllerTransform.GetWorldPose();
+                    }
 
                     break;
 
                 default:
-                    Assert.IsTrue(false, $"Unhandled {nameof(MovementDirection)}={m_LeftHandMovementDirection}");
+                    Assert.IsTrue(
+                        false,
+                        $"Unhandled {nameof(MovementDirection)}=" +
+                        $"{m_LeftHandMovementDirection}"
+                    );
+
                     break;
             }
 
-            // Get the forward source for the right hand input
+            // Referencia para el joystick derecho.
             switch (m_RightHandMovementDirection)
             {
                 case MovementDirection.HeadRelative:
                     if (m_HeadTransform != null)
-                        m_RightMovementPose = m_HeadTransform.GetWorldPose();
+                    {
+                        m_RightMovementPose =
+                            m_HeadTransform.GetWorldPose();
+                    }
 
                     break;
 
                 case MovementDirection.HandRelative:
                     if (m_RightControllerTransform != null)
-                        m_RightMovementPose = m_RightControllerTransform.GetWorldPose();
+                    {
+                        m_RightMovementPose =
+                            m_RightControllerTransform.GetWorldPose();
+                    }
 
                     break;
 
                 default:
-                    Assert.IsTrue(false, $"Unhandled {nameof(MovementDirection)}={m_RightHandMovementDirection}");
+                    Assert.IsTrue(
+                        false,
+                        $"Unhandled {nameof(MovementDirection)}=" +
+                        $"{m_RightHandMovementDirection}"
+                    );
+
                     break;
             }
 
-            // Combine the two poses into the forward source based on the magnitude of input
-            var leftHandValue = leftHandMoveInput.ReadValue();
-            var rightHandValue = rightHandMoveInput.ReadValue();
+            // Combina las referencias según la intensidad
+            // de entrada de cada joystick.
+            Vector2 leftHandValue = leftHandMoveInput.ReadValue();
+            Vector2 rightHandValue = rightHandMoveInput.ReadValue();
 
-            var totalSqrMagnitude = leftHandValue.sqrMagnitude + rightHandValue.sqrMagnitude;
-            var leftHandBlend = 0.5f;
+            float totalSqrMagnitude =
+                leftHandValue.sqrMagnitude +
+                rightHandValue.sqrMagnitude;
+
+            float leftHandBlend = 0.5f;
+
             if (totalSqrMagnitude > Mathf.Epsilon)
-                leftHandBlend = leftHandValue.sqrMagnitude / totalSqrMagnitude;
+            {
+                leftHandBlend =
+                    leftHandValue.sqrMagnitude / totalSqrMagnitude;
+            }
 
-            var combinedPosition = Vector3.Lerp(m_RightMovementPose.position, m_LeftMovementPose.position, leftHandBlend);
-            var combinedRotation = Quaternion.Slerp(m_RightMovementPose.rotation, m_LeftMovementPose.rotation, leftHandBlend);
-            m_CombinedTransform.SetPositionAndRotation(combinedPosition, combinedRotation);
+            Vector3 combinedPosition = Vector3.Lerp(
+                m_RightMovementPose.position,
+                m_LeftMovementPose.position,
+                leftHandBlend
+            );
 
-            return base.ComputeDesiredMove(input);
+            Quaternion combinedRotation = Quaternion.Slerp(
+                m_RightMovementPose.rotation,
+                m_LeftMovementPose.rotation,
+                leftHandBlend
+            );
+
+            m_CombinedTransform.SetPositionAndRotation(
+                combinedPosition,
+                combinedRotation
+            );
+
+            return ComputeCorrectedMove(input);
+        }
+
+        /// <summary>
+        /// Calcula el desplazamiento en coordenadas globales
+        /// usando la vertical actual del XR Origin.
+        /// </summary>
+        private Vector3 ComputeCorrectedMove(Vector2 input)
+        {
+            if (mediator == null || mediator.xrOrigin == null)
+            {
+                return Vector3.zero;
+            }
+
+            var xrOrigin = mediator.xrOrigin;
+
+            if (xrOrigin.Origin == null)
+            {
+                return Vector3.zero;
+            }
+
+            Transform origin = xrOrigin.Origin.transform;
+            Transform source = forwardSource;
+
+            if (source == null)
+            {
+                source = xrOrigin.Camera != null
+                    ? xrOrigin.Camera.transform
+                    : origin;
+            }
+
+            // Limita el movimiento diagonal y conserva
+            // la intensidad analógica del joystick.
+            Vector3 inputMove = Vector3.ClampMagnitude(
+                new Vector3(
+                    enableStrafe ? input.x : 0f,
+                    0f,
+                    input.y
+                ),
+                1f
+            );
+
+            // Conserva el comportamiento de control en el aire
+            // del ContinuousMoveProvider proporcionado.
+            var gravity = gravityProvider;
+
+            if (
+                enableFly ||
+                inAirControlModifier >= 1f ||
+                gravity == null ||
+                !gravity.enabled ||
+                !gravity.useGravity ||
+                gravity.isGrounded
+            )
+            {
+                m_CorrectedInAirVelocity = inputMove;
+            }
+            else
+            {
+                m_CorrectedInAirVelocity +=
+                    Time.deltaTime *
+                    inAirControlModifier *
+                    10f *
+                    (inputMove - m_CorrectedInAirVelocity);
+
+                if (
+                    m_CorrectedInAirVelocity.sqrMagnitude
+                    <= 0.0001f
+                )
+                {
+                    m_CorrectedInAirVelocity = Vector3.zero;
+                }
+            }
+
+            float speedFactor =
+                moveSpeed *
+                Time.deltaTime *
+                origin.localScale.x;
+
+            // Movimiento libre si se activa el modo de vuelo.
+            if (enableFly)
+            {
+                return (
+                    source.right * inputMove.x +
+                    source.forward * inputMove.z
+                ) * speedFactor;
+            }
+
+            Vector3 up = origin.up;
+            Vector3 inputForward = source.forward;
+
+            // Conserva la alternativa del proveedor original
+            // cuando la dirección de mirada es paralela
+            // a la vertical del jugador.
+            if (
+                Mathf.Approximately(
+                    Mathf.Abs(Vector3.Dot(inputForward, up)),
+                    1f
+                )
+            )
+            {
+                inputForward = -source.up;
+            }
+
+            // Proyecta el avance sobre el plano del jugador.
+            Vector3 forward = Vector3.ProjectOnPlane(
+                inputForward,
+                up
+            );
+
+            if (forward.sqrMagnitude < 0.0001f)
+            {
+                forward = origin.forward;
+            }
+
+            forward.Normalize();
+
+            // Calcula la derecha respecto al arriba actual,
+            // también cuando el jugador está boca abajo.
+            Vector3 right = Vector3.Cross(
+                up,
+                forward
+            ).normalized;
+
+            // Las direcciones ya están en coordenadas globales:
+            // no se aplica TransformDirection de nuevo.
+            return (
+                right * m_CorrectedInAirVelocity.x +
+                forward * m_CorrectedInAirVelocity.z
+            ) * speedFactor;
         }
     }
 }

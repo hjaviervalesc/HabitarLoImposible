@@ -1,9 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// Contiene la configuración compartida del disco de Poincaré.
-/// Es la única clase que almacena DiskScale y la configuración
-/// general de compresión visual.
+/// Contiene la configuración compartida del disco de Poincaré, su escala de representación y la compresión visual.
 /// </summary>
 public class HyperbolicSpace : MonoBehaviour
 {
@@ -22,143 +20,62 @@ public class HyperbolicSpace : MonoBehaviour
     private float minimumVisualScale = 0.02f;
 
 
-    public float DiskScale => diskScale;
-
-    public float ScaleIntensity => scaleIntensity;
-
-    public float MinimumVisualScale =>
-        minimumVisualScale;
-
-    public float UnityRadius => diskScale;
-
-
     /// <summary>
-    /// Convierte una coordenada del disco en una
-    /// posición local del plano X-Z de Unity.
+    /// Convierte una coordenada del disco en una posición local del plano X-Z de Unity con la altura indicada.
     /// </summary>
-    public Vector3 PoincareToUnity(
-        Vector2 poincarePosition,
-        float height = 0f
-    )
+    public Vector3 PoincareToUnity(Vector2 poincarePosition, float height = 0f)
     {
-        return new Vector3(
-            poincarePosition.x * diskScale,
-            height,
-            poincarePosition.y * diskScale
-        );
+        return new Vector3(poincarePosition.x * diskScale, height, poincarePosition.y * diskScale);
     }
 
-
     /// <summary>
-    /// Convierte una coordenada del disco en una
-    /// posición bidimensional del plano X-Z.
+    /// Convierte una coordenada del disco en una posición bidimensional que representa el plano X-Z local de Unity.
     /// </summary>
-    public Vector2 PoincareToUnity2D(
-        Vector2 poincarePosition
-    )
+    public Vector2 PoincareToUnity2D(Vector2 poincarePosition)
     {
         return poincarePosition * diskScale;
     }
 
 
     /// <summary>
-    /// Convierte una posición local de Unity
-    /// en una coordenada del disco de Poincaré.
+    /// Convierte una posición bidimensional del plano local de Unity en una coordenada del disco de Poincaré.
     /// </summary>
-    public Vector2 UnityToPoincare(
-        Vector3 unityPosition
-    )
-    {
-        return new Vector2(
-            unityPosition.x / diskScale,
-            unityPosition.z / diskScale
-        );
-    }
-
-
-    /// <summary>
-    /// Convierte una posición bidimensional de Unity
-    /// en una coordenada del disco de Poincaré.
-    /// </summary>
-    public Vector2 UnityToPoincare(
-        Vector2 unityPosition
-    )
+    public Vector2 UnityToPoincare(Vector2 unityPosition)
     {
         return unityPosition / diskScale;
     }
 
-
     /// <summary>
-    /// Calcula el factor de compresión visual:
-    ///
-    /// s(p) = (1 - |p|²)^intensidad
+    /// Calcula el factor de compresión visual a partir de la distancia al centro y la intensidad, respetando la escala visual mínima.
     /// </summary>
-    public float GetScaleFactor(
-        Vector2 poincarePosition
-    )
+    public float GetScaleFactor(Vector2 poincarePosition)
     {
-        float baseScale = Mathf.Clamp01(
-            1f - poincarePosition.sqrMagnitude
-        );
+        float baseScale = Mathf.Clamp01(1f - poincarePosition.sqrMagnitude);
 
-        float scaleFactor = Mathf.Pow(
-            baseScale,
-            scaleIntensity
-        );
+        float scaleFactor = Mathf.Pow(baseScale, scaleIntensity);
 
-        return Mathf.Max(
-            minimumVisualScale,
-            scaleFactor
-        );
+        return Mathf.Max(minimumVisualScale, scaleFactor);
     }
 
 
     /// <summary>
-    /// Comprueba si un punto está dentro del disco.
+    /// Comprueba si un punto está estrictamente dentro del radio indicado, limitado al intervalo entre cero y uno.
     /// </summary>
-    public bool IsInsideDisk(
-        Vector2 poincarePosition
-    )
+    public bool IsInsideDisk(Vector2 poincarePosition, float allowedRadius)
     {
-        return poincarePosition.sqrMagnitude < 1f;
+        float radius = Mathf.Clamp01(allowedRadius);
+
+        return poincarePosition.sqrMagnitude < radius * radius;
     }
 
-
     /// <summary>
-    /// Comprueba si un punto está dentro
-    /// del radio matemático indicado.
+    /// Conserva los puntos dentro del radio permitido y desplaza radialmente hasta ese límite los que lo superan.
     /// </summary>
-    public bool IsInsideDisk(
-        Vector2 poincarePosition,
-        float allowedRadius
-    )
+    public Vector2 ClampInsideDisk(Vector2 poincarePosition, float allowedRadius = 0.99f)
     {
-        float radius = Mathf.Clamp01(
-            allowedRadius
-        );
+        float radius = Mathf.Clamp(allowedRadius, 0.001f, 0.999f);
 
-        return poincarePosition.sqrMagnitude <
-               radius * radius;
-    }
-
-
-    /// <summary>
-    /// Limita un punto para impedir que atraviese
-    /// el radio permitido del disco.
-    /// </summary>
-    public Vector2 ClampInsideDisk(
-        Vector2 poincarePosition,
-        float allowedRadius = 0.99f
-    )
-    {
-        float radius = Mathf.Clamp(
-            allowedRadius,
-            0.001f,
-            0.999f
-        );
-
-        if (poincarePosition.sqrMagnitude <=
-            radius * radius)
+        if (poincarePosition.sqrMagnitude <= radius * radius)
         {
             return poincarePosition;
         }

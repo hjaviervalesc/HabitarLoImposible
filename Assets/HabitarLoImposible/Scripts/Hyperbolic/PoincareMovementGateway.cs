@@ -1,70 +1,46 @@
 using UnityEngine;
 
+/// <summary>
+/// Gestiona la transición entre las escaleras y el disco de Poincaré, activando o desactivando el movimiento hiperbólico según el lado por el que sale el jugador.
+/// </summary>
 [RequireComponent(typeof(BoxCollider))]
 public class PoincareMovementGateway : MonoBehaviour
 {
     [Header("Referencias")]
-    [SerializeField]
-    private HyperbolicMovementController movementController;
-
-    [SerializeField]
-    private CharacterController playerCharacterController;
-
-    [SerializeField]
-    private Transform xrCamera;
+    [SerializeField] private HyperbolicMovementController movementController;
+    [SerializeField] private CharacterController playerCharacterController;
+    [SerializeField] private Transform xrCamera;
 
     [Header("Lados de la transición")]
-    [Tooltip(
-        "GameObject vacío colocado fuera del trigger, " +
-        "en el lado del disco."
-    )]
-    [SerializeField]
-    private Transform diskSidePoint;
+    [Tooltip("GameObject vacío colocado fuera del trigger, en el lado del disco.")]
+    [SerializeField] private Transform diskSidePoint;
 
-    [Tooltip(
-        "GameObject vacío colocado fuera del trigger, " +
-        "en el lado de las escaleras."
-    )]
-    [SerializeField]
-    private Transform stairsSidePoint;
+    [Tooltip("GameObject vacío colocado fuera del trigger, en el lado de las escaleras.")]
+    [SerializeField] private Transform stairsSidePoint;
 
     [Header("Información")]
-    [SerializeField]
-    private bool playerInside;
-
-    [SerializeField]
-    private float distanceToDiskSide;
-
-    [SerializeField]
-    private float distanceToStairsSide;
+    [SerializeField] private bool playerInside;
+    [SerializeField] private float distanceToDiskSide;
+    [SerializeField] private float distanceToStairsSide;
 
     private BoxCollider gatewayCollider;
 
     private void Awake()
     {
-        gatewayCollider =
-            GetComponent<BoxCollider>();
-
+        gatewayCollider = GetComponent<BoxCollider>();
         gatewayCollider.isTrigger = true;
 
         if (movementController == null)
         {
-            movementController =
-                FindFirstObjectByType<
-                    HyperbolicMovementController
-                >();
+            movementController = FindFirstObjectByType<HyperbolicMovementController>();
         }
 
         if (playerCharacterController == null)
         {
-            playerCharacterController =
-                FindFirstObjectByType<
-                    CharacterController
-                >();
+            playerCharacterController = FindFirstObjectByType<CharacterController>();
         }
 
-        if (xrCamera == null &&
-            Camera.main != null)
+        if (xrCamera == null && Camera.main != null)
         {
             xrCamera = Camera.main.transform;
         }
@@ -72,18 +48,16 @@ public class PoincareMovementGateway : MonoBehaviour
 
     private void Start()
     {
-        /*
-         * El jugador comienza en el tablero.
-         */
         if (movementController != null)
         {
-            movementController
-                .SetHyperbolicMovementActive(false);
+            movementController.SetHyperbolicMovementActive(false);
         }
     }
 
-    private void OnTriggerEnter(
-        Collider other)
+    /// <summary>
+    /// Desactiva las restricciones del movimiento hiperbólico cuando el jugador entra en la zona de transición.
+    /// </summary>
+    private void OnTriggerEnter(Collider other)
     {
         if (!IsPlayer(other))
         {
@@ -91,26 +65,13 @@ public class PoincareMovementGateway : MonoBehaviour
         }
 
         playerInside = true;
-
-        /*
-         * Dentro de la zona de transición se eliminan:
-         *
-         * - El límite del disco.
-         * - La restricción a las carreteras.
-         * - La reducción de velocidad.
-         */
-        movementController
-            .SetHyperbolicMovementActive(false);
-
-        Debug.Log(
-            "Zona de transición: movimiento " +
-            "hiperbólico desactivado.",
-            this
-        );
+        movementController.SetHyperbolicMovementActive(false);
     }
 
-    private void OnTriggerExit(
-        Collider other)
+    /// <summary>
+    /// Determina el lado por el que ha salido el jugador y activa el movimiento hiperbólico únicamente si se dirige hacia el disco.
+    /// </summary>
+    private void OnTriggerExit(Collider other)
     {
         if (!IsPlayer(other))
         {
@@ -119,119 +80,65 @@ public class PoincareMovementGateway : MonoBehaviour
 
         playerInside = false;
 
-        if (diskSidePoint == null ||
-            stairsSidePoint == null)
+        if (diskSidePoint == null || stairsSidePoint == null)
         {
-            Debug.LogError(
-                "Falta asignar Disk Side Point o " +
-                "Stairs Side Point.",
-                this
-            );
-
+            Debug.LogError("Falta asignar Disk Side Point o Stairs Side Point.", this);
             return;
         }
 
-        Vector3 playerPosition =
-            GetPlayerPosition();
+        Vector3 playerPosition = GetPlayerPosition();
 
-        distanceToDiskSide =
-            Vector3.Distance(
-                playerPosition,
-                diskSidePoint.position
-            );
+        distanceToDiskSide = Vector3.Distance(playerPosition, diskSidePoint.position);
+        distanceToStairsSide = Vector3.Distance(playerPosition, stairsSidePoint.position);
 
-        distanceToStairsSide =
-            Vector3.Distance(
-                playerPosition,
-                stairsSidePoint.position
-            );
+        bool exitedTowardsDisk = distanceToDiskSide < distanceToStairsSide;
 
-        bool exitedTowardsDisk =
-            distanceToDiskSide <
-            distanceToStairsSide;
-
-        movementController
-            .SetHyperbolicMovementActive(
-                exitedTowardsDisk
-            );
-
-        if (exitedTowardsDisk)
-        {
-            Debug.Log(
-                "Salida hacia el disco: movimiento " +
-                "hiperbólico activado.",
-                this
-            );
-        }
-        else
-        {
-            Debug.Log(
-                "Salida hacia las escaleras: movimiento " +
-                "hiperbólico desactivado.",
-                this
-            );
-        }
+        movementController.SetHyperbolicMovementActive(exitedTowardsDisk);
     }
 
+    /// <summary>
+    /// Obtiene la posición real del jugador utilizando preferentemente la cámara del sistema XR.
+    /// </summary>
     private Vector3 GetPlayerPosition()
     {
-        /*
-         * En XR es mejor utilizar la cámara porque
-         * representa la posición real del jugador.
-         */
         if (xrCamera != null)
         {
             return xrCamera.position;
         }
 
-        return playerCharacterController
-            .transform.position;
+        return playerCharacterController.transform.position;
     }
 
-    private bool IsPlayer(
-        Collider other)
+    /// <summary>
+    /// Comprueba si el collider detectado pertenece al controlador del jugador.
+    /// </summary>
+    private bool IsPlayer(Collider other)
     {
-        if (other == null ||
-            playerCharacterController == null ||
-            movementController == null)
+        if (other == null || playerCharacterController == null || movementController == null)
         {
             return false;
         }
 
-        return other ==
-            playerCharacterController;
+        return other == playerCharacterController;
     }
 
+    /// <summary>
+    /// Representa visualmente en el editor los puntos correspondientes al disco y a las escaleras.
+    /// </summary>
     private void OnDrawGizmosSelected()
     {
         if (diskSidePoint != null)
         {
             Gizmos.color = Color.green;
-
-            Gizmos.DrawSphere(
-                diskSidePoint.position,
-                0.15f
-            );
-
-            Gizmos.DrawLine(
-                transform.position,
-                diskSidePoint.position
-            );
+            Gizmos.DrawSphere(diskSidePoint.position, 0.15f);
+            Gizmos.DrawLine(transform.position, diskSidePoint.position);
         }
 
         if (stairsSidePoint != null)
         {
             Gizmos.color = Color.red;
-
-            Gizmos.DrawSphere(
-                stairsSidePoint.position,
-                0.15f
-            );
-
-            Gizmos.DrawLine(
-                transform.position,
-                stairsSidePoint.position
-            );
+            Gizmos.DrawSphere(stairsSidePoint.position, 0.15f);
+            Gizmos.DrawLine(transform.position, stairsSidePoint.position);
         }
     }
 }

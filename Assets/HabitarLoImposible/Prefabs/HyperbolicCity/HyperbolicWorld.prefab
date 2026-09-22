@@ -99,6 +99,7 @@ Transform:
   - {fileID: 2168311483838846914}
   - {fileID: 8583106207744753939}
   - {fileID: 7736644896550822317}
+  - {fileID: 4831341371130660638}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &3612200490866641264
@@ -148,14 +149,8 @@ MonoBehaviour:
   hyperbolicSpace: {fileID: 6741309039911073803}
   generationRadius: 0.97
   useHyperbolicDistribution: 1
-  buildingRoadGap: 0.15
+  buildingRoadGap: 0.08
   spawnRules:
-  - objectTypeName: Otros edificios
-    prefabs:
-    - {fileID: 4733361619402307947, guid: 1cd16ee784c8f6245b6080b66c78c1ed, type: 3}
-    - {fileID: 2267570053763330416, guid: f41147151c6fe7848860b0af354e041a, type: 3}
-    amount: 10
-    faceNearestRoad: 1
   - objectTypeName: Shops
     prefabs:
     - {fileID: 6678674159184572234, guid: 562bd7ffc8718af47a49c9ead8c372a9, type: 3}
@@ -177,13 +172,151 @@ MonoBehaviour:
   - objectTypeName: Arboles
     prefabs:
     - {fileID: 5441771876914340031, guid: 1a54b9ba00637f54eac241cf25202a80, type: 3}
-    amount: 0
+    amount: 1000
     faceNearestRoad: 0
   maximumAttemptsPerObject: 50
   maximumTotalObjects: 5000
   generateOnStart: 1
   useFixedSeed: 1
   seed: 12345
+--- !u!1 &4323372629395457115
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4831341371130660638}
+  - component: {fileID: 6987806471350967598}
+  - component: {fileID: 6150355345609982619}
+  m_Layer: 3
+  m_Name: PoincareGateway
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4831341371130660638
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4323372629395457115}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -13.28, y: 0, z: -71.22}
+  m_LocalScale: {x: 7.5783, y: 6.5817, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 7531898461228231919}
+  - {fileID: 6629409506651557161}
+  m_Father: {fileID: 1197762001833875345}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &6987806471350967598
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4323372629395457115}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 0.48330793, z: 1}
+  m_Center: {x: 0, y: 0.2583434, z: 0}
+--- !u!114 &6150355345609982619
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4323372629395457115}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fb76e19ee4c11a2478d36a0a0832c914, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoincareMovementGateway
+  movementController: {fileID: 5637212067965802861}
+  playerCharacterController: {fileID: 0}
+  xrCamera: {fileID: 0}
+  diskSidePoint: {fileID: 6629409506651557161}
+  stairsSidePoint: {fileID: 7531898461228231919}
+  playerInside: 0
+  distanceToDiskSide: 0
+  distanceToStairsSide: 0
+--- !u!1 &6431712039730074119
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6629409506651557161}
+  m_Layer: 3
+  m_Name: DiskSidePoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6629409506651557161
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6431712039730074119}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -0.089199245, y: 0.10699998, z: 4.455002}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 4831341371130660638}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &8985132337394539860
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7531898461228231919}
+  m_Layer: 3
+  m_Name: 'StairsSidePoint '
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7531898461228231919
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8985132337394539860}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -0.0891995, y: 0.10699999, z: -3.9899979}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 4831341371130660638}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &7842083030213412422
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -193,12 +326,16 @@ PrefabInstance:
     m_TransformParent: {fileID: 1197762001833875345}
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 3aea0dfcf31dd50479ecf31fde9e0dee, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1.5
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 3aea0dfcf31dd50479ecf31fde9e0dee, type: 3}
       propertyPath: m_LocalScale.y
       value: 0.01
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 3aea0dfcf31dd50479ecf31fde9e0dee, type: 3}
       propertyPath: m_LocalScale.z
-      value: 1
+      value: 1.5
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 3aea0dfcf31dd50479ecf31fde9e0dee, type: 3}
       propertyPath: m_LocalPosition.x
@@ -260,7 +397,10 @@ PrefabInstance:
       addedObject: {fileID: 6741309039911073803}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 3aea0dfcf31dd50479ecf31fde9e0dee, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 4619878891319565504}
+      addedObject: {fileID: 2264651692853116618}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 3aea0dfcf31dd50479ecf31fde9e0dee, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7153344562598352147}
   m_SourcePrefab: {fileID: 100100000, guid: 3aea0dfcf31dd50479ecf31fde9e0dee, type: 3}
 --- !u!1 &6923656770878470935 stripped
 GameObject:
@@ -284,7 +424,8 @@ MonoBehaviour:
   xrOrigin: {fileID: 0}
   xrCamera: {fileID: 0}
   moveProvider: {fileID: 0}
-  maximumNavigationRadius: 0.98
+  hyperbolicMovementActive: 0
+  maximumNavigationRadius: 0.99
   baseSpeed: 3
   minimumSpeed: 0.05
   allowedRoadHalfWidth: 0.6
@@ -308,10 +449,28 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 36cc3f96d6de549469ba61dd1da6c96f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HyperbolicSpace
-  diskScale: 50
+  diskScale: 76
   scaleIntensity: 1
   minimumVisualScale: 0.02
---- !u!65 &4619878891319565504
+--- !u!114 &2264651692853116618
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6923656770878470935}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45d02b74712e7b746972cf72aa91df06, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CircularInvisibleBarrier
+  radius: 50
+  segments: 64
+  barrierThickness: 0.2
+  barrierHeight: 5
+  baseHeight: 0
+  generateOnStart: 1
+--- !u!65 &7153344562598352147
 BoxCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -330,7 +489,7 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 1, y: 1.0000002, z: 0.025000006}
+  m_Size: {x: 100, y: 2.5, z: 100}
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!4 &7736644896550822317 stripped
 Transform:

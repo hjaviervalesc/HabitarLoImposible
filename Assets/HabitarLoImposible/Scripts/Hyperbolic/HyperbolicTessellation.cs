@@ -1,6 +1,9 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// Genera una teselación hiperbólica regular {p,q} mediante reflexiones del polígono central y registra sus polígonos y aristas.
+/// </summary>
 public class HyperbolicTessellation : MonoBehaviour
 {
     [Header("Teselación regular {p,q}")]
@@ -25,14 +28,11 @@ public class HyperbolicTessellation : MonoBehaviour
     private readonly HashSet<string> polygonKeys = new HashSet<string>();
     private readonly HashSet<string> edgeKeys = new HashSet<string>();
 
-    // Otros scripts podrán consultar estos datos, 
-    // pero no modificar las listas directamente. 
-    public IReadOnlyList<Vector2[]> Polygons => polygons;
     public IReadOnlyList<HyperbolicEdge> Edges => edges;
 
-    /// <summary> 
-    /// Genera la teselación al iniciar si la opción generateOnAwake está activada. 
-    /// </summary> 
+    /// <summary>
+    /// Genera la teselación al iniciar si la opción generateOnAwake está activada.
+    /// </summary>
     private void Awake()
     {
         if (generateOnAwake)
@@ -41,9 +41,9 @@ public class HyperbolicTessellation : MonoBehaviour
         }
     }
 
-    /// <summary> 
-    /// Genera los datos de la teselación hiperbólica regular {p,q}. 
-    /// </summary> 
+    /// <summary>
+    /// Limpia los datos anteriores, comprueba la condición hiperbólica y genera el polígono central y sus coronas.
+    /// </summary>
     [ContextMenu("Generar datos de teselación")]
     public void GenerateTessellation()
     {
@@ -51,11 +51,7 @@ public class HyperbolicTessellation : MonoBehaviour
 
         if (!IsHyperbolicTessellation())
         {
-            Debug.LogError(
-                $"La teselación {{{p},{q}}} no es hiperbólica. " +
-                "Debe cumplirse (p - 2)(q - 2) > 4."
-            );
-
+            Debug.LogError($"La teselación {{{p},{q}}} no es hiperbólica. " + "Debe cumplirse (p - 2)(q - 2) > 4.");
             return;
         }
 
@@ -66,15 +62,12 @@ public class HyperbolicTessellation : MonoBehaviour
         GenerateCrowns(centralPolygon);
     }
 
-    /// <summary> 
-    /// Genera las coronas de polígonos alrededor del polígono central. 
-    /// </summary> 
+    /// <summary>
+    /// Genera las coronas mediante reflexiones de los polígonos de la corona anterior respecto a cada uno de sus lados.
+    /// </summary>
     private void GenerateCrowns(Vector2[] centralPolygon)
     {
-        List<Vector2[]> currentCrown = new List<Vector2[]>
-        {
-            centralPolygon
-        };
+        List<Vector2[]> currentCrown = new List<Vector2[]> { centralPolygon };
 
         for (int crown = 1; crown <= numberOfCrowns; crown++)
         {
@@ -105,9 +98,9 @@ public class HyperbolicTessellation : MonoBehaviour
         }
     }
 
-    /// <summary> 
-    /// Añade un polígono a la teselación y registra sus lados si no existe previamente. 
-    /// </summary> 
+    /// <summary>
+    /// Añade un polígono y registra sus lados si sus vértices están dentro del límite permitido y su clave no está registrada.
+    /// </summary>
     private bool AddPolygon(Vector2[] polygon)
     {
         if (!IsPolygonInsideDisk(polygon))
@@ -128,9 +121,9 @@ public class HyperbolicTessellation : MonoBehaviour
         return true;
     }
 
-    /// <summary> 
-    /// Añade los lados únicos de un polígono a la colección de aristas. 
-    /// </summary> 
+    /// <summary>
+    /// Añade los lados de un polígono a la colección de aristas evitando duplicados mediante sus claves.
+    /// </summary>
     private void AddPolygonEdges(Vector2[] polygon)
     {
         for (int i = 0; i < polygon.Length; i++)
@@ -149,12 +142,11 @@ public class HyperbolicTessellation : MonoBehaviour
         }
     }
 
-    /// <summary> 
-    /// Calcula los vértices del polígono regular situado en el centro de la teselación. 
-    /// </summary> 
+    /// <summary>
+    /// Calcula los vértices del polígono regular central a partir de p y q y aplica la rotación configurada.
+    /// </summary>
     private Vector2[] CalculateCentralPolygon()
     {
-
         float s = Mathf.Sin(Mathf.PI / p);
         float c = Mathf.Cos(Mathf.PI / q);
 
@@ -178,9 +170,9 @@ public class HyperbolicTessellation : MonoBehaviour
         return vertices;
     }
 
-    /// <summary> 
-    /// Refleja un polígono respecto a uno de sus lados hiperbólicos. 
-    /// </summary> 
+    /// <summary>
+    /// Refleja un polígono respecto a un lado hiperbólico mediante reflexión sobre un diámetro o inversión en su circunferencia de soporte.
+    /// </summary>
     private Vector2[] ReflectPolygon(Vector2[] polygon, Vector2 pointA, Vector2 pointB)
     {
         Vector2[] reflected = new Vector2[polygon.Length];
@@ -197,12 +189,7 @@ public class HyperbolicTessellation : MonoBehaviour
             return reflected;
         }
 
-        bool circleFound = HyperbolicGeodesic.TryGetSupportingCircle(
-            pointA,
-            pointB,
-            out Vector2 center,
-            out float radius
-        );
+        bool circleFound = HyperbolicGeodesic.TryGetSupportingCircle(pointA, pointB, out Vector2 center, out float radius);
 
         if (!circleFound)
         {
@@ -217,14 +204,11 @@ public class HyperbolicTessellation : MonoBehaviour
         return reflected;
     }
 
-    /// <summary> 
-    /// Refleja un punto mediante inversión respecto a una circunferencia. 
-    /// </summary> 
+    /// <summary>
+    /// Invierte un punto respecto a una circunferencia y devuelve el punto original si está demasiado cerca de su centro.
+    /// </summary>
     private Vector2 ReflectAcrossCircle(Vector2 point, Vector2 center, float radius)
     {
-        // Hitchman, secciones 3.2 y 5.1: 
-        // P' = C + R²(P-C) / ||P-C||² 
-
         Vector2 direction = point - center;
         float squaredDistance = direction.sqrMagnitude;
 
@@ -236,9 +220,9 @@ public class HyperbolicTessellation : MonoBehaviour
         return center + direction * (radius * radius / squaredDistance);
     }
 
-    /// <summary> 
-    /// Refleja un punto respecto a una geodésica que corresponde a un diámetro. 
-    /// </summary> 
+    /// <summary>
+    /// Refleja un punto respecto a la recta que pasa por el origen con la dirección unitaria indicada.
+    /// </summary>
     private Vector2 ReflectAcrossDiameter(Vector2 point, Vector2 direction)
     {
         Vector2 projection = Vector2.Dot(point, direction) * direction;
@@ -246,9 +230,9 @@ public class HyperbolicTessellation : MonoBehaviour
         return 2f * projection - point;
     }
 
-    /// <summary> 
-    /// Comprueba que todos los vértices de un polígono se encuentran dentro del disco. 
-    /// </summary> 
+    /// <summary>
+    /// Comprueba que todos los vértices del polígono están dentro del disco respetando el margen de protección de la frontera.
+    /// </summary>
     private bool IsPolygonInsideDisk(Vector2[] polygon)
     {
         float maximumRadius = 1f - boundaryMargin;
@@ -265,9 +249,9 @@ public class HyperbolicTessellation : MonoBehaviour
         return true;
     }
 
-    /// <summary> 
-    /// Genera una clave única para identificar un polígono y evitar duplicados. 
-    /// </summary> 
+    /// <summary>
+    /// Genera una clave del polígono ordenando las claves de sus vértices para detectar duplicados con la precisión establecida.
+    /// </summary>
     private string CreatePolygonKey(Vector2[] polygon)
     {
         const float precision = 100000f;
@@ -284,9 +268,9 @@ public class HyperbolicTessellation : MonoBehaviour
         return string.Join("|", vertexKeys);
     }
 
-    /// <summary> 
-    /// Genera una clave única para identificar un lado y evitar duplicados. 
-    /// </summary> 
+    /// <summary>
+    /// Genera una clave del lado independiente del orden de sus extremos para detectar duplicados con la precisión establecida.
+    /// </summary>
     private string CreateEdgeKey(Vector2 pointA, Vector2 pointB)
     {
         const float precision = 100000f;
@@ -294,14 +278,12 @@ public class HyperbolicTessellation : MonoBehaviour
         string first = CreatePointKey(pointA, precision);
         string second = CreatePointKey(pointB, precision);
 
-        return string.CompareOrdinal(first, second) < 0
-            ? first + "|" + second
-            : second + "|" + first;
+        return string.CompareOrdinal(first, second) < 0 ? first + "|" + second : second + "|" + first;
     }
 
-    /// <summary> 
-    /// Genera una clave a partir de las coordenadas de un punto con una precisión determinada. 
-    /// </summary> 
+    /// <summary>
+    /// Genera una clave redondeando las coordenadas del punto multiplicadas por el factor de precisión indicado.
+    /// </summary>
     private string CreatePointKey(Vector2 point, float precision)
     {
         int x = Mathf.RoundToInt(point.x * precision);
@@ -310,17 +292,17 @@ public class HyperbolicTessellation : MonoBehaviour
         return $"{x},{y}";
     }
 
-    /// <summary> 
-    /// Comprueba que los valores p y q corresponden a una teselación hiperbólica. 
-    /// </summary> 
+    /// <summary>
+    /// Comprueba si p y q satisfacen la condición (p - 2)(q - 2) mayor que cuatro.
+    /// </summary>
     private bool IsHyperbolicTessellation()
     {
         return (p - 2) * (q - 2) > 4;
     }
 
-    /// <summary> 
-    /// Elimina todos los datos almacenados de la teselación generada. 
-    /// </summary> 
+    /// <summary>
+    /// Elimina los polígonos, las aristas y las claves almacenadas de la teselación.
+    /// </summary>
     private void ClearData()
     {
         polygons.Clear();

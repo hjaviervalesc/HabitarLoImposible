@@ -1,72 +1,57 @@
 using Unity.XR.CoreUtils;
 using UnityEngine;
 
+/// <summary>
+/// Orienta progresivamente el XR Origin según el peldaño detectado bajo el jugador, siempre que el primer impacto del SphereCast pertenezca a una capa de escaleras.
+/// </summary>
 public class StairGravityOrientation : MonoBehaviour
 {
-    [Header("REFERENCIAS")]
-
+    [Header("Referencias")]
     [SerializeField]
     private XROrigin xrOrigin;
 
     [SerializeField]
     private CharacterController characterController;
 
-
-    [Header("DETECCIÓN")]
-
-    [Tooltip(
-        "Capa utilizada exclusivamente por todos " +
-        "los peldaños de las escaleras."
-    )]
+    [Header("Detección")]
+    [Tooltip("Capa utilizada exclusivamente por los peldaños.")]
     [SerializeField]
     private LayerMask stairsLayer;
 
-    [Tooltip(
-        "Distancia adicional de detección " +
-        "bajo los pies."
-    )]
+    [Tooltip("Capas que detecta el SphereCast. Incluir escaleras " + "y obstáculos. Excluir las capas del jugador y del avatar.")]
+    [SerializeField]
+    private LayerMask detectionLayers = ~0;
+
+    [Tooltip("Distancia adicional de detección bajo los pies.")]
     [SerializeField]
     private float groundCheckDistance = 0.4f;
 
-    [Tooltip(
-        "Proporción del radio del CharacterController " +
-        "utilizada en la detección."
-    )]
+    [Tooltip("Proporción del radio del CharacterController " + "utilizada en la detección.")]
     [Range(0.1f, 1f)]
     [SerializeField]
     private float sphereRadiusMultiplier = 0.6f;
 
-
-    [Header("ORIENTACIÓN")]
-
+    [Header("Orientación")]
     [Tooltip("Velocidad de giro en grados por segundo.")]
     [SerializeField]
     private float rotationSpeed = 60f;
 
-
-    [Header("DEPURACIÓN")]
-
-    [SerializeField]
-    private bool showDebugRay = true;
-
-
     private Vector3 targetUp;
     private bool hasTargetUp;
 
-
+    /// <summary>
+    /// Busca el CharacterController si no está asignado e inicializa la dirección vertical objetivo con la del XR Origin.
+    /// </summary>
     private void Awake()
     {
         if (characterController == null)
         {
-            characterController =
-                GetComponent<CharacterController>();
+            characterController = GetComponent<CharacterController>();
         }
 
-        if (characterController == null &&
-            xrOrigin != null)
+        if (characterController == null && xrOrigin != null)
         {
-            characterController =
-                xrOrigin.GetComponent<CharacterController>();
+            characterController = xrOrigin.GetComponent<CharacterController>();
         }
 
         if (xrOrigin != null)
@@ -75,11 +60,12 @@ public class StairGravityOrientation : MonoBehaviour
         }
     }
 
-
+    /// <summary>
+    /// Comprueba las referencias, detecta el peldaño y aplica el giro si se ha obtenido una dirección vertical válida.
+    /// </summary>
     private void LateUpdate()
     {
-        if (xrOrigin == null ||
-            characterController == null)
+        if (xrOrigin == null || characterController == null)
         {
             return;
         }
@@ -94,106 +80,48 @@ public class StairGravityOrientation : MonoBehaviour
         RotatePlayer();
     }
 
-
+    /// <summary>
+    /// Realiza un SphereCast hacia abajo respecto al XR Origin y obtiene la vertical del primer collider detectado únicamente si pertenece a stairsLayer.
+    /// </summary>
     private void DetectCurrentStep()
     {
-        /*
-         * En cada frame partimos de que no existe
-         * ningún peldaño debajo del jugador.
-         */
         hasTargetUp = false;
 
-        Transform origin =
-            xrOrigin.transform;
+        Transform origin = xrOrigin.transform;
 
-        Vector3 controllerCenter =
-            characterController.transform
-                .TransformPoint(
-                    characterController.center
-                );
+        Vector3 controllerCenter = characterController.transform.TransformPoint(characterController.center);
+        Vector3 downDirection = -origin.up;
 
-        Vector3 downDirection =
-            -origin.up;
+        float sphereRadius = characterController.radius * sphereRadiusMultiplier;
+        float detectionDistance = characterController.height * 0.5f + groundCheckDistance;
 
-        float sphereRadius =
-            characterController.radius *
-            sphereRadiusMultiplier;
-
-        float detectionDistance =
-            characterController.height * 0.5f +
-            groundCheckDistance;
-
-        if (showDebugRay)
-        {
-            Debug.DrawRay(
-                controllerCenter,
-                downDirection *
-                detectionDistance,
-                Color.red
-            );
-        }
-
-        bool detected =
-            Physics.SphereCast(
-                controllerCenter,
-                sphereRadius,
-                downDirection,
-                out RaycastHit hit,
-                detectionDistance,
-                stairsLayer,
-                QueryTriggerInteraction.Ignore
-            );
+        bool detected = Physics.SphereCast(controllerCenter, sphereRadius, downDirection, out RaycastHit hit, detectionDistance, detectionLayers, QueryTriggerInteraction.Ignore);
 
         if (!detected)
         {
             return;
         }
 
-        /*
-         * Cualquier collider perteneciente a la
-         * capa Stairs se considera un peldaño.
-         */
-        Transform currentStep =
-            hit.collider.transform;
+        bool isStair = (stairsLayer.value & (1 << hit.collider.gameObject.layer)) != 0;
 
-        /*
-         * La nueva vertical del jugador corresponde
-         * al eje Y local del peldaño detectado.
-         */
-        targetUp =
-            currentStep.up;
-
-        hasTargetUp = true;
-
-        if (showDebugRay)
+        if (!isStair)
         {
-            Debug.DrawRay(
-                currentStep.position,
-                targetUp,
-                Color.green
-            );
+            return;
         }
+
+        targetUp = hit.collider.transform.up;
+        hasTargetUp = true;
     }
 
-
+    /// <summary>
+    /// Alinea progresivamente la vertical del XR Origin con la del peldaño detectado utilizando la velocidad de giro configurada.
+    /// </summary>
     private void RotatePlayer()
     {
-        Transform origin =
-            xrOrigin.transform;
+        Transform origin = xrOrigin.transform;
 
-        Quaternion targetRotation =
-            Quaternion.FromToRotation(
-                origin.up,
-                targetUp
-            ) *
-            origin.rotation;
+        Quaternion targetRotation = Quaternion.FromToRotation(origin.up, targetUp) * origin.rotation;
 
-        origin.rotation =
-            Quaternion.RotateTowards(
-                origin.rotation,
-                targetRotation,
-                rotationSpeed *
-                Time.deltaTime
-            );
+        origin.rotation = Quaternion.RotateTowards(origin.rotation, targetRotation, rotationSpeed * Time.deltaTime);
     }
 }
