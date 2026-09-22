@@ -1,0 +1,2 @@
+C:\Master GC and VR\TFM\HabitarLoImposible\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\CMakeLists.txt
+C:\Master GC and VR\TFM\HabitarLoImposible\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\src\main\cpp\GameActivity\CMakeLists.txt
